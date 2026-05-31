@@ -23,7 +23,7 @@ jobs:
       matrix:
         include:
           - name: macOS
-            os: macos-13
+            os: macos-15-intel
             command: npx electron-builder --mac --publish never
             artifact: cadanraw-macos
             paths: |
