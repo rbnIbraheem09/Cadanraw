@@ -1,7 +1,7 @@
 {
   "name": "cadanraw",
   "productName": "Cadanraw",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Cadanraw — a local-first whiteboard app powered by Excalidraw",
   "private": true,
   "main": "dist-electron/main.js",

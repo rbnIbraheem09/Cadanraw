@@ -13,6 +13,7 @@ asarUnpack:
 mac:
   icon: assets/icon.icns
   category: public.app-category.productivity
+  sign: scripts/ad-hoc-sign-mac.cjs
   target:
     - target: dmg
       arch:
