@@ -110,8 +110,8 @@ jobs:
 
           notes="Unsigned Cadanraw desktop builds for macOS and Windows. macOS may require right-click Open; Windows may show SmartScreen on first launch."
 
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" "${files[@]}" --clobber
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$tag" "${files[@]}" --title "Cadanraw $tag" --notes "$notes"
+            gh release create "$tag" "${files[@]}" --title "Cadanraw $tag" --notes "$notes" --repo "$GITHUB_REPOSITORY"
           fi
