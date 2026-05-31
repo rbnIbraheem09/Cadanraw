@@ -1,0 +1,63 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="120" y1="120" x2="904" y2="904" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3C1A78"/>
+      <stop offset="0.5" stop-color="#1C1038"/>
+      <stop offset="1" stop-color="#0A0A12"/>
+    </linearGradient>
+    <linearGradient id="squiggle" x1="200" y1="700" x2="540" y2="580" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7C3AED"/>
+      <stop offset="1" stop-color="#C9A8FF"/>
+    </linearGradient>
+    <linearGradient id="penBody" x1="0" y1="-48" x2="0" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2B2536"/>
+      <stop offset="0.5" stop-color="#16131C"/>
+      <stop offset="1" stop-color="#0B0910"/>
+    </linearGradient>
+    <linearGradient id="nibGrad" x1="0" y1="-34" x2="70" y2="34" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F2E6FF"/>
+      <stop offset="1" stop-color="#9B4DF0"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="penShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="12" stdDeviation="20" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+    <filter id="cardShadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="20" stdDeviation="28" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <!-- Squircle body (macOS grid: ~832 within 1024, soft contact shadow) -->
+  <g filter="url(#cardShadow)">
+    <rect x="96" y="92" width="832" height="832" rx="190" fill="url(#bg)"/>
+  </g>
+  <!-- top rim light for dimensionality -->
+  <rect x="97" y="93" width="830" height="830" rx="189" fill="none" stroke="#FFFFFF" stroke-opacity="0.07" stroke-width="2"/>
+
+  <!-- The squiggle being drawn (purple, glowing), trailing left from the nib -->
+  <path d="M 176 652 C 222 594, 286 604, 326 652 C 360 694, 398 690, 432 650 C 462 616, 492 606, 512 600"
+        fill="none" stroke="url(#squiggle)" stroke-width="28" stroke-linecap="round"
+        stroke-linejoin="round" filter="url(#glow)"/>
+
+  <!-- Pen: nib at (512,600), body up-right at ~46° -->
+  <g transform="translate(512 600) rotate(-46)" filter="url(#penShadow)">
+    <!-- body + rounded cap -->
+    <rect x="150" y="-48" width="252" height="96" rx="46" fill="url(#penBody)"/>
+    <!-- glossy top highlight -->
+    <rect x="178" y="-34" width="196" height="11" rx="5.5" fill="#FFFFFF" opacity="0.10"/>
+    <!-- purple grip band -->
+    <rect x="98" y="-48" width="56" height="96" rx="12" fill="#9B4DF0"/>
+    <rect x="98" y="-48" width="16" height="96" rx="8" fill="#C9A8FF" opacity="0.55"/>
+    <!-- collar -->
+    <rect x="74" y="-38" width="28" height="76" rx="8" fill="#332247"/>
+    <!-- nib cone -->
+    <path d="M 0 0 L 78 -34 L 78 34 Z" fill="url(#nibGrad)"/>
+    <!-- nib slit -->
+    <rect x="24" y="-3" width="52" height="6" rx="3" fill="#1C1038" opacity="0.55"/>
+    <!-- nib tip dot -->
+    <circle cx="2" cy="0" r="9" fill="#F7EEFF"/>
+  </g>
+</svg>

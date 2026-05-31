@@ -1,0 +1,20 @@
+appId: com.cadanraw.app
+productName: Cadanraw
+directories:
+  output: dist-app
+  buildResources: assets
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+# better-sqlite3 ships a native .node binary that must live outside the asar.
+asarUnpack:
+  - "**/*.node"
+mac:
+  icon: assets/icon.icns
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64

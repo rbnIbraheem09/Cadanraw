@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Fonts are self-hosted (bundled by Vite), so no external font origins are
+      needed. Allows Vite HMR over ws + Excalidraw's web workers (blob:) and
+      inline image data (data:/blob:).
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self' ws://localhost:5173 http://localhost:5173"
+    />
+    <script>
+      // Dark-only app — lock the theme before first paint to avoid any flash.
+      document.documentElement.setAttribute("data-theme", "dark");
+      // Excalidraw loads its drawing fonts at runtime from this base + "fonts/…".
+      // We self-host them under public/fonts. A FULL URL to the document directory
+      // works in both dev (http://localhost:5173/) and the packaged app
+      // (file:///…/dist/) — a bare "/" would resolve to location.origin, which is
+      // broken under file://.
+      window.EXCALIDRAW_ASSET_PATH = new URL(".", window.location.href).href;
+    </script>
+    <title>Cadanraw</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
