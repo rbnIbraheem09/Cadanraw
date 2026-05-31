@@ -5,9 +5,14 @@ import {
   ipcMain,
   screen,
   shell,
+  net,
   type MenuItemConstructorOptions,
 } from "electron";
 import * as path from "path";
+
+// Force sRGB color profile so pasted screenshots don't appear brighter due to
+// Display P3 → sRGB color space mismatches on wide-gamut macOS displays.
+app.commandLine.appendSwitch("force-color-profile", "srgb");
 import Store from "electron-store";
 import { openDatabase } from "./db/connection";
 import { createCanvasService } from "./services/canvas-service";
@@ -250,6 +255,91 @@ app.whenReady().then(() => {
     electron: process.versions.electron,
     chrome: process.versions.chrome,
   }));
+
+  // Fetch an image URL from the main process (bypasses renderer CORS restrictions).
+  // Returns { dataURL, mimeType } if the URL resolves to an image, else null.
+  ipcMain.handle("app:fetch-image", async (_e, url: string) => {
+    try {
+      const parsed = new URL(url);
+      if (!["http:", "https:"].includes(parsed.protocol)) return null;
+
+      const res = await net.fetch(url, {
+        headers: { "User-Agent": "Cadanraw/1.0" },
+      });
+      if (!res.ok) return null;
+
+      const contentType = (res.headers.get("content-type") ?? "image/jpeg")
+        .split(";")[0]
+        .trim();
+      if (!contentType.startsWith("image/")) return null;
+
+      const buffer = Buffer.from(await res.arrayBuffer());
+      if (buffer.byteLength > 20 * 1024 * 1024) return null; // reject > 20 MB
+      return {
+        dataURL: `data:${contentType};base64,${buffer.toString("base64")}`,
+        mimeType: contentType,
+      };
+    } catch {
+      return null;
+    }
+  });
+
+  // Fetch a webpage's og:image URL from the main process.
+  // Returns the resolved og:image URL string, or null if not found.
+  ipcMain.handle("app:get-og-image", async (_e, url: string) => {
+    try {
+      const parsed = new URL(url);
+      if (!["http:", "https:"].includes(parsed.protocol)) return null;
+
+      const res = await net.fetch(url, {
+        headers: { "User-Agent": "Cadanraw/1.0", Accept: "text/html" },
+      });
+      if (!res.ok) return null;
+
+      const contentType = res.headers.get("content-type") ?? "";
+      if (!contentType.startsWith("text/html")) return null;
+
+      const html = await res.text();
+      // Extract og:image meta tag (handle both attribute orderings)
+      const ogImage =
+        html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/i)?.[1] ??
+        html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:image"/i)?.[1];
+
+      if (!ogImage) return null;
+
+      // Resolve relative URLs against the page URL
+      return new URL(ogImage, url).href;
+    } catch {
+      return null;
+    }
+  });
+
+  // Check GitHub for the latest Cadanraw release.
+  // Returns { version, url } or null on failure.
+  ipcMain.handle("app:check-for-updates", async () => {
+    try {
+      const res = await net.fetch(
+        "https://api.github.com/repos/rbnIbraheem09/Cadanraw/releases/latest",
+        { headers: { "User-Agent": "Cadanraw/1.0" } },
+      );
+      if (!res.ok) return null;
+      const data = (await res.json()) as Record<string, unknown>;
+      return {
+        version: data.tag_name as string,
+        url: data.html_url as string,
+      };
+    } catch {
+      return null;
+    }
+  });
+
+  // Open a URL in the user's default browser.
+  ipcMain.handle("app:open-external", (_e, url: string) => {
+    const parsed = new URL(url);
+    if (["http:", "https:"].includes(parsed.protocol)) {
+      void shell.openExternal(url);
+    }
+  });
 
   ipcMain.handle("window:minimize", () => mainWindow?.minimize());
   ipcMain.handle("window:toggle-maximize", () => {

@@ -78,3 +78,13 @@ export interface VersionApi {
   restore(versionId: string): Promise<{ json: string }>;
   remove(versionId: string): Promise<void>;
 }
+
+export interface FetchedImage {
+  dataURL: string;
+  mimeType: string;
+}
+
+export interface ReleaseInfo {
+  version: string;
+  url: string;
+}

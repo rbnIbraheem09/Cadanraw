@@ -15,6 +15,10 @@ declare global {
         electron: string;
         chrome: string;
       }>;
+      fetchImage: (url: string) => Promise<{ dataURL: string; mimeType: string } | null>;
+      getOgImage: (url: string) => Promise<string | null>;
+      checkForUpdates: () => Promise<{ version: string; url: string } | null>;
+      openExternal: (url: string) => Promise<void>;
       canvases: {
         list(): Promise<CanvasMeta[]>;
         create(name: string): Promise<CanvasMeta>;

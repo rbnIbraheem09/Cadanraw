@@ -4,6 +4,8 @@ import type {
   VersionApi,
   LibraryApi,
   DialogApi,
+  FetchedImage,
+  ReleaseInfo,
 } from "./ipc-contract";
 
 // The single, typed bridge the renderer is allowed to touch. One namespace per
@@ -48,6 +50,14 @@ const api = {
     electron: string;
     chrome: string;
   }> => ipcRenderer.invoke("app:get-info"),
+  fetchImage: (url: string): Promise<FetchedImage | null> =>
+    ipcRenderer.invoke("app:fetch-image", url),
+  getOgImage: (url: string): Promise<string | null> =>
+    ipcRenderer.invoke("app:get-og-image", url),
+  checkForUpdates: (): Promise<ReleaseInfo | null> =>
+    ipcRenderer.invoke("app:check-for-updates"),
+  openExternal: (url: string): Promise<void> =>
+    ipcRenderer.invoke("app:open-external", url),
   canvases,
   versions,
   library,
