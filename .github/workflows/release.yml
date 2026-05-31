@@ -23,12 +23,21 @@ jobs:
       matrix:
         include:
           - name: macOS
+            arch: x64
             os: macos-15-intel
-            command: npx electron-builder --mac --publish never
-            artifact: cadanraw-macos
+            command: npx electron-builder --mac dmg --x64 --publish never
+            artifact: cadanraw-macos-x64
             paths: |
               dist-app/*.dmg
+          - name: macOS arm64
+            arch: arm64
+            os: macos-15-intel
+            command: npx electron-builder --mac dmg --arm64 --publish never
+            artifact: cadanraw-macos-arm64
+            paths: |
+              dist-app/*arm64.dmg
           - name: Windows
+            arch: x64
             os: windows-latest
             command: npx electron-builder --win --x64 --publish never
             artifact: cadanraw-windows

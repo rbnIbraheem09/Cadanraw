@@ -15,10 +15,7 @@ mac:
   category: public.app-category.productivity
   sign: scripts/ad-hoc-sign-mac.cjs
   target:
-    - target: dmg
-      arch:
-        - arm64
-        - x64
+    - dmg
 win:
   icon: assets/icon.png
   target:
