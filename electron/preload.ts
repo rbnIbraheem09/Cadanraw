@@ -52,6 +52,18 @@ const api = {
   versions,
   library,
   dialog: dialogApi,
+  window: {
+    minimize: (): Promise<void> => ipcRenderer.invoke("window:minimize"),
+    toggleMaximize: (): Promise<boolean> =>
+      ipcRenderer.invoke("window:toggle-maximize"),
+    close: (): Promise<void> => ipcRenderer.invoke("window:close"),
+    isMaximized: (): Promise<boolean> => ipcRenderer.invoke("window:is-maximized"),
+    onMaximizedChange: (cb: (maximized: boolean) => void): (() => void) => {
+      const handler = (_e: unknown, maximized: boolean) => cb(maximized);
+      ipcRenderer.on("window:maximized-change", handler);
+      return () => ipcRenderer.removeListener("window:maximized-change", handler);
+    },
+  },
   /** Subscribe to native-menu actions (New, Open, Export…). Returns an unsubscribe. */
   onMenuAction: (cb: (action: string) => void): (() => void) => {
     const handler = (_e: unknown, action: string) => cb(action);

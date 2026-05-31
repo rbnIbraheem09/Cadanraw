@@ -1,4 +1,12 @@
-import { app, BrowserWindow, Menu, ipcMain, screen, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  ipcMain,
+  screen,
+  shell,
+  type MenuItemConstructorOptions,
+} from "electron";
 import * as path from "path";
 import Store from "electron-store";
 import { openDatabase } from "./db/connection";
@@ -62,6 +70,7 @@ function scheduleBoundsSave() {
 
 function createWindow(): BrowserWindow {
   const bounds = sanitizeBounds(store.get("windowBounds"));
+  const isMac = process.platform === "darwin";
 
   const win = new BrowserWindow({
     ...bounds,
@@ -69,8 +78,14 @@ function createWindow(): BrowserWindow {
     minHeight: MIN_HEIGHT,
     show: false, // reveal once content is ready — avoids a white flash
     backgroundColor: "#0A0A10", // --deep; solid (no vibrancy behind the canvas)
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 12, y: 14 },
+    ...(isMac
+      ? {
+          titleBarStyle: "hiddenInset" as const,
+          trafficLightPosition: { x: 12, y: 14 },
+        }
+      : {
+          frame: false,
+        }),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -89,49 +104,66 @@ function createWindow(): BrowserWindow {
 
   win.on("resize", scheduleBoundsSave);
   win.on("move", scheduleBoundsSave);
+  win.on("maximize", () => emitWindowMaximized(win));
+  win.on("unmaximize", () => emitWindowMaximized(win));
 
-  // Cmd+W hides instead of closing — the app keeps running in the background.
-  win.webContents.on("before-input-event", (event, input) => {
-    if (
-      input.type === "keyDown" &&
-      input.meta &&
-      input.key.toLowerCase() === "w"
-    ) {
-      event.preventDefault();
-      win.hide();
-    }
-  });
+  if (isMac) {
+    // Cmd+W hides instead of closing — the app keeps running in the background.
+    win.webContents.on("before-input-event", (event, input) => {
+      if (
+        input.type === "keyDown" &&
+        input.meta &&
+        input.key.toLowerCase() === "w"
+      ) {
+        event.preventDefault();
+        win.hide();
+      }
+    });
+  }
 
-  // Red traffic-light / menu Close also hides (unless the app is truly quitting).
+  // macOS red traffic-light / menu Close hides (unless the app is truly quitting).
+  // Windows and Linux use the native convention: close the final window and quit.
   win.on("close", (e) => {
-    if (!isQuitting) {
+    if (isMac && !isQuitting) {
       e.preventDefault();
       persistBounds();
       win.hide();
+      return;
     }
+    persistBounds();
   });
 
   return win;
+}
+
+function emitWindowMaximized(win = mainWindow) {
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send("window:maximized-change", win.isMaximized());
 }
 
 function buildMenu(): Menu {
   // Sends a named action to the renderer (where the store handles it).
   const send = (action: string) => () =>
     mainWindow?.webContents.send("menu:action", action);
+  const isMac = process.platform === "darwin";
 
-  return Menu.buildFromTemplate([
-    {
-      label: app.name,
-      submenu: [
-        { role: "about" },
-        { type: "separator" },
-        { role: "hide" },
-        { role: "hideOthers" },
-        { role: "unhide" },
-        { type: "separator" },
-        { role: "quit" },
-      ],
-    },
+  const template: MenuItemConstructorOptions[] = [
+    ...(isMac
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: "about" },
+              { type: "separator" },
+              { role: "hide" },
+              { role: "hideOthers" },
+              { role: "unhide" },
+              { type: "separator" },
+              { role: "quit" },
+            ],
+          } satisfies MenuItemConstructorOptions,
+        ]
+      : []),
     {
       label: "File",
       submenu: [
@@ -145,6 +177,12 @@ function buildMenu(): Menu {
           click: send("save-version"),
         },
         { label: "Export…", accelerator: "CmdOrCtrl+E", click: send("export") },
+        ...(!isMac
+          ? [
+              { type: "separator" as const },
+              { label: "Exit", role: "quit" as const },
+            ]
+          : []),
       ],
     },
     {
@@ -190,7 +228,9 @@ function buildMenu(): Menu {
         { role: "minimize" },
       ],
     },
-  ]);
+  ];
+
+  return Menu.buildFromTemplate(template);
 }
 
 app.whenReady().then(() => {
@@ -211,21 +251,34 @@ app.whenReady().then(() => {
     chrome: process.versions.chrome,
   }));
 
-  if (process.platform === "darwin") {
-    Menu.setApplicationMenu(buildMenu());
-  }
+  ipcMain.handle("window:minimize", () => mainWindow?.minimize());
+  ipcMain.handle("window:toggle-maximize", () => {
+    if (!mainWindow) return false;
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow.maximize();
+    }
+    return mainWindow.isMaximized();
+  });
+  ipcMain.handle("window:close", () => mainWindow?.close());
+  ipcMain.handle("window:is-maximized", () => mainWindow?.isMaximized() ?? false);
+
+  Menu.setApplicationMenu(buildMenu());
 
   mainWindow = createWindow();
 
-  // macOS: re-summon the window from the dock after a Cmd+W hide.
-  app.on("activate", () => {
-    if (mainWindow) {
-      mainWindow.show();
-      mainWindow.focus();
-    } else {
-      mainWindow = createWindow();
-    }
-  });
+  if (process.platform === "darwin") {
+    // macOS: re-summon the window from the dock after a Cmd+W hide.
+    app.on("activate", () => {
+      if (mainWindow) {
+        mainWindow.show();
+        mainWindow.focus();
+      } else {
+        mainWindow = createWindow();
+      }
+    });
+  }
 });
 
 app.on("before-quit", () => {

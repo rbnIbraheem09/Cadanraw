@@ -49,6 +49,13 @@ declare global {
         }): Promise<{ ok: boolean; canceled?: boolean; path?: string }>;
         openFile(): Promise<{ name: string; json: string }[]>;
       };
+      window: {
+        minimize(): Promise<void>;
+        toggleMaximize(): Promise<boolean>;
+        close(): Promise<void>;
+        isMaximized(): Promise<boolean>;
+        onMaximizedChange(cb: (maximized: boolean) => void): () => void;
+      };
       onMenuAction(cb: (action: string) => void): () => void;
     };
   }
