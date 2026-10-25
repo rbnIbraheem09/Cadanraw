@@ -1,3 +1,4 @@
+import { getLinkMetadata } from "./utils/link-metadata";
 import {
   app,
   BrowserWindow,
@@ -9,12 +10,44 @@ import {
   type MenuItemConstructorOptions,
 } from "electron";
 import * as path from "path";
+import { randomUUID } from "node:crypto";
+import { createAgentServer } from "./services/agent-server";
+const pendingAgentCalls = new Map<
+  string,
+  { resolve: (value: unknown) => void; reject: (error: Error) => void }
+>();
+const agentServer = createAgentServer(
+  (method, args) =>
+    new Promise((resolve, reject) => {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        reject(new Error("App window unavailable"));
+        return;
+      }
+      const id = randomUUID();
+      const timer = setTimeout(() => {
+        pendingAgentCalls.delete(id);
+        reject(new Error("Canvas did not respond"));
+      }, 10000);
+      pendingAgentCalls.set(id, {
+        resolve: (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      });
+      mainWindow.webContents.send("agent:request", { id, method, args });
+    }),
+);
 
 // Force sRGB color profile so pasted screenshots don't appear brighter due to
 // Display P3 → sRGB color space mismatches on wide-gamut macOS displays.
 app.commandLine.appendSwitch("force-color-profile", "srgb");
 import Store from "electron-store";
 import { openDatabase } from "./db/connection";
+import { createFolderService } from "./services/folder-service";
 import { createCanvasService } from "./services/canvas-service";
 import { createVersionService } from "./services/version-service";
 import { createLibraryService } from "./services/library-service";
@@ -53,8 +86,12 @@ function sanitizeBounds(b: WindowBounds): WindowBounds {
   const height = Math.max(MIN_HEIGHT, Math.round(b.height));
   if (b.x === undefined || b.y === undefined) return { width, height };
 
-  const area = screen.getDisplayMatching({ x: b.x, y: b.y, width, height })
-    .workArea;
+  const area = screen.getDisplayMatching({
+    x: b.x,
+    y: b.y,
+    width,
+    height,
+  }).workArea;
   const x = Math.min(Math.max(b.x, area.x), area.x + area.width - width);
   const y = Math.min(Math.max(b.y, area.y), area.y + area.height - height);
   return { width, height, x, y };
@@ -172,8 +209,16 @@ function buildMenu(): Menu {
     {
       label: "File",
       submenu: [
-        { label: "New Canvas", accelerator: "CmdOrCtrl+N", click: send("new-canvas") },
-        { label: "Open…", accelerator: "CmdOrCtrl+O", click: send("open-import") },
+        {
+          label: "New Canvas",
+          accelerator: "CmdOrCtrl+N",
+          click: send("new-canvas"),
+        },
+        {
+          label: "Open…",
+          accelerator: "CmdOrCtrl+O",
+          click: send("open-import"),
+        },
         { type: "separator" },
         { label: "Save", accelerator: "CmdOrCtrl+S", click: send("save") },
         {
@@ -245,9 +290,35 @@ app.whenReady().then(() => {
   db = openDatabase(dbPath(dataDir));
   const trash = (p: string) => shell.trashItem(p);
   registerCanvasHandlers(ipcMain, createCanvasService({ db, dataDir, trash }));
-  registerVersionHandlers(ipcMain, createVersionService({ db, dataDir, trash }));
+  const folders = createFolderService(db);
+  ipcMain.handle("folders:list", () => folders.list());
+  ipcMain.handle("folders:create", (_e, { name, parentId }) =>
+    folders.create(name, parentId),
+  );
+  ipcMain.handle("folders:rename", (_e, { id, name }) =>
+    folders.rename(id, name),
+  );
+  ipcMain.handle("folders:remove", (_e, id) => folders.remove(id));
+  registerVersionHandlers(
+    ipcMain,
+    createVersionService({ db, dataDir, trash }),
+  );
   registerLibraryHandlers(ipcMain, createLibraryService({ dataDir }));
   registerDialogHandlers(ipcMain, () => mainWindow);
+
+  ipcMain.handle("agent:status", () => agentServer.status());
+  ipcMain.handle("agent:start", (_e, allowWrite: boolean) =>
+    agentServer.start(allowWrite === true),
+  );
+  ipcMain.handle("agent:stop", () => agentServer.stop());
+  ipcMain.on("agent:response", (event, response) => {
+    if (event.sender !== mainWindow?.webContents) return;
+    const pending = pendingAgentCalls.get(response.id);
+    if (!pending) return;
+    pendingAgentCalls.delete(response.id);
+    if (response.error) pending.reject(new Error(response.error));
+    else pending.resolve(response.result);
+  });
 
   ipcMain.handle("app:get-info", () => ({
     name: app.getName(),
@@ -265,6 +336,7 @@ app.whenReady().then(() => {
 
       const res = await net.fetch(url, {
         headers: { "User-Agent": "Cadanraw/1.0" },
+        signal: AbortSignal.timeout(10000),
       });
       if (!res.ok) return null;
 
@@ -273,8 +345,24 @@ app.whenReady().then(() => {
         .trim();
       if (!contentType.startsWith("image/")) return null;
 
-      const buffer = Buffer.from(await res.arrayBuffer());
-      if (buffer.byteLength > 20 * 1024 * 1024) return null; // reject > 20 MB
+      if (Number(res.headers.get("content-length")) > 20 * 1024 * 1024)
+        return null;
+      const reader = res.body?.getReader();
+      if (!reader) return null;
+      const chunks: Buffer[] = [];
+      let size = 0;
+      try {
+        while (true) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          size += chunk.value.byteLength;
+          if (size > 20 * 1024 * 1024) return null;
+          chunks.push(Buffer.from(chunk.value));
+        }
+      } finally {
+        await reader.cancel();
+      }
+      const buffer = Buffer.concat(chunks);
       return {
         dataURL: `data:${contentType};base64,${buffer.toString("base64")}`,
         mimeType: contentType,
@@ -283,6 +371,10 @@ app.whenReady().then(() => {
       return null;
     }
   });
+
+  ipcMain.handle("app:link-metadata", (_e, url: string) =>
+    getLinkMetadata(url, net.fetch),
+  );
 
   // Fetch a webpage's og:image URL from the main process.
   // Returns the resolved og:image URL string, or null if not found.
@@ -293,6 +385,7 @@ app.whenReady().then(() => {
 
       const res = await net.fetch(url, {
         headers: { "User-Agent": "Cadanraw/1.0", Accept: "text/html" },
+        signal: AbortSignal.timeout(10000),
       });
       if (!res.ok) return null;
 
@@ -302,7 +395,9 @@ app.whenReady().then(() => {
       const html = await res.text();
       // Extract og:image meta tag (handle both attribute orderings)
       const ogImage =
-        html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/i)?.[1] ??
+        html.match(
+          /<meta[^>]+property="og:image"[^>]+content="([^"]+)"/i,
+        )?.[1] ??
         html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:image"/i)?.[1];
 
       if (!ogImage) return null;
@@ -352,7 +447,10 @@ app.whenReady().then(() => {
     return mainWindow.isMaximized();
   });
   ipcMain.handle("window:close", () => mainWindow?.close());
-  ipcMain.handle("window:is-maximized", () => mainWindow?.isMaximized() ?? false);
+  ipcMain.handle(
+    "window:is-maximized",
+    () => mainWindow?.isMaximized() ?? false,
+  );
 
   Menu.setApplicationMenu(buildMenu());
 
@@ -374,6 +472,7 @@ app.whenReady().then(() => {
 app.on("before-quit", () => {
   isQuitting = true;
   persistBounds();
+  void agentServer.stop();
   db?.close(); // checkpoints WAL and releases the file
   db = null;
 });

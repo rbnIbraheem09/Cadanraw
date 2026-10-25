@@ -1,0 +1,12 @@
+services:
+  collaboration:
+    build:
+      context: .
+      dockerfile: Dockerfile.collaboration
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - collaboration-data:/data
+volumes:
+  collaboration-data:

@@ -1,3 +1,11 @@
+import { BLOCK_KINDS } from "./lib/block-data";
+import MoveCanvasDialog from "./components/dialogs/MoveCanvasDialog";
+import {
+  CaptureUpdateAction,
+  convertToExcalidrawElements,
+  serializeAsJSON,
+} from "@excalidraw/excalidraw";
+import { insertBlock, type BlockKind } from "./lib/blocks";
 import { useEffect } from "react";
 import AppLayout from "./components/layout/AppLayout";
 import NewCanvasDialog from "./components/dialogs/NewCanvasDialog";
@@ -11,14 +19,91 @@ import { useStore } from "./store/excaliStore";
 
 // Open .excalidraw file(s) via the native Open dialog and import each.
 async function runImportDialog() {
-  const files = await window.excali.dialog.openFile();
-  for (const f of files) {
-    await useStore.getState().importCanvas(f.name, f.json);
-  }
+  await useStore.getState().importFiles();
 }
 
 export default function App() {
   const bootstrap = useStore((s) => s.bootstrap);
+
+  useEffect(
+    () =>
+      window.excali.agent.onRequest(async ({ id, method, args }) => {
+        try {
+          const s = useStore.getState();
+          if (method === "list_canvases") {
+            window.excali.agent.respond({ id, result: s.canvases });
+            return;
+          }
+          const api = s.api;
+          if (!api || s.previewVersionId || s.loading)
+            throw new Error("Open an editable canvas first");
+          let result: unknown;
+          if (method === "read_active_canvas")
+            result = {
+              id: s.activeCanvasId,
+              scene: JSON.parse(
+                serializeAsJSON(
+                  api.getSceneElements(),
+                  api.getAppState(),
+                  api.getFiles(),
+                  "local",
+                ),
+              ),
+            };
+          else {
+            if (method === "add_block") {
+              if (!BLOCK_KINDS.includes(args.kind as BlockKind))
+                throw new Error("Invalid block kind");
+              if (
+                args.kind === "link" &&
+                !/^https?:\/\//.test(String(args.url))
+              )
+                throw new Error("A valid URL is required");
+              insertBlock(api, args.kind as BlockKind, String(args.url ?? ""));
+            } else if (method === "add_elements") {
+              if (!Array.isArray(args.elements) || args.elements.length > 200)
+                throw new Error("Supply at most 200 elements");
+              const allowed = [
+                "rectangle",
+                "ellipse",
+                "diamond",
+                "text",
+                "line",
+                "arrow",
+              ];
+              if (
+                args.elements.some(
+                  (e) =>
+                    !e ||
+                    !allowed.includes(e.type) ||
+                    !Number.isFinite(e.x) ||
+                    !Number.isFinite(e.y),
+                )
+              )
+                throw new Error(
+                  "Use drawing/text element skeletons with finite x and y",
+                );
+              const elements = convertToExcalidrawElements(args.elements);
+              api.updateScene({
+                elements: [
+                  ...api.getSceneElementsIncludingDeleted(),
+                  ...elements,
+                ],
+                captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+              });
+            } else throw new Error("Unknown command");
+            result = { ok: true };
+          }
+          window.excali.agent.respond({ id, result });
+        } catch (e) {
+          window.excali.agent.respond({
+            id,
+            error: e instanceof Error ? e.message : "Request failed",
+          });
+        }
+      }),
+    [],
+  );
 
   useAutoSave();
   useFileDrop();
@@ -59,6 +144,7 @@ export default function App() {
   return (
     <>
       <AppLayout />
+      <MoveCanvasDialog />
       <NewCanvasDialog />
       <SaveVersionDialog />
       <ExportDialog />

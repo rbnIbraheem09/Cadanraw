@@ -8,11 +8,11 @@ const run = (cmd, args) =>
   spawnSync(cmd, args, { stdio: "inherit" }).status ?? 1;
 
 console.log("[test] rebuilding better-sqlite3 for Node (test runtime)…");
-run("npm", ["rebuild", "better-sqlite3"]);
+const rebuildCode = run("npm", ["rebuild", "better-sqlite3"]);
 
-const code = run("npx", ["vitest", "run"]);
+const code = rebuildCode || run("npx", ["vitest", "run"]);
 
 console.log("[test] restoring better-sqlite3 for Electron (app runtime)…");
-run("npm", ["run", "rebuild-sqlite"]);
+const restoreCode = run("npm", ["run", "rebuild-sqlite"]);
 
-process.exit(code); // preserve the real test result
+process.exit(code || restoreCode); // Fail if tests or runtime restoration failed.

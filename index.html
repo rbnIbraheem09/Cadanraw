@@ -10,7 +10,7 @@
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self' ws://localhost:5173 http://localhost:5173"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https://img.youtube.com; frame-src https://www.youtube-nocookie.com https://www.youtube.com;  worker-src 'self' blob:; connect-src 'self' https: ws://localhost:5173 http://localhost:* http://127.0.0.1:*"
     />
     <script>
       // Dark-only app — lock the theme before first paint to avoid any flash.

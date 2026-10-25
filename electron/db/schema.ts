@@ -36,13 +36,28 @@ CREATE TABLE IF NOT EXISTS settings (
 
 // Ordered list — index N upgrades the DB from user_version N to N+1.
 // Append future migrations; never edit a shipped one.
-const MIGRATIONS: string[] = [INITIAL_SCHEMA];
+const MIGRATIONS: string[] = [
+  INITIAL_SCHEMA,
+  `
+CREATE TABLE folders (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  parent_id TEXT REFERENCES folders(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+ALTER TABLE canvases ADD COLUMN folder_id TEXT REFERENCES folders(id) ON DELETE SET NULL;
+CREATE INDEX idx_canvases_folder ON canvases(folder_id);
+CREATE INDEX idx_folders_parent ON folders(parent_id);
+`,
+];
 
 export function runMigrations(db: Database.Database): void {
   let current = db.pragma("user_version", { simple: true }) as number;
   while (current < MIGRATIONS.length) {
-    db.exec(MIGRATIONS[current]);
-    db.pragma(`user_version = ${current + 1}`);
+    db.transaction(() => {
+      db.exec(MIGRATIONS[current]);
+      db.pragma(`user_version = ${current + 1}`);
+    })();
     current++;
   }
 }

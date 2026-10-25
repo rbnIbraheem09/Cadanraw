@@ -1,5 +1,4 @@
 import { useState, type KeyboardEvent, type MouseEvent } from "react";
-import { motion } from "framer-motion";
 import ContextMenu from "../ui/ContextMenu";
 import { useStore } from "../../store/excaliStore";
 import { formatRelativeTime, pluralize } from "../../lib/format";
@@ -12,6 +11,7 @@ export default function CanvasListItem({ canvas }: { canvas: CanvasMeta }) {
   const requestDelete = useStore((s) => s.requestDelete);
   const duplicateCanvas = useStore((s) => s.duplicateCanvas);
   const togglePin = useStore((s) => s.togglePin);
+  const setMovingCanvas = useStore((s) => s.setMovingCanvas);
   const requestExport = useStore((s) => s.requestExport);
 
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -45,20 +45,18 @@ export default function CanvasListItem({ canvas }: { canvas: CanvasMeta }) {
   return (
     <>
       <div
+        draggable={!editing}
+        onDragStart={(e) => {
+          e.dataTransfer.setData("application/x-cadanraw-board", canvas.id);
+          e.dataTransfer.effectAllowed = "move";
+        }}
+        onDoubleClick={startRename}
         onClick={() => !editing && openCanvas(canvas.id)}
         onContextMenu={onContextMenu}
         className={`group relative flex cursor-default flex-col gap-0.5 rounded-lg px-2.5 py-2 transition-colors ${
           isActive ? "bg-accent-soft" : "hover:bg-raised"
         }`}
       >
-        {isActive && (
-          <motion.span
-            layoutId="active-canvas-bar"
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-accent"
-          />
-        )}
-
         {editing ? (
           <input
             autoFocus
@@ -111,9 +109,17 @@ export default function CanvasListItem({ canvas }: { canvas: CanvasMeta }) {
               onClick: () => togglePin(canvas.id),
             },
             { label: "Rename", onClick: startRename },
+            {
+              label: "Move to folder…",
+              onClick: () => setMovingCanvas(canvas.id),
+            },
             { label: "Duplicate", onClick: () => duplicateCanvas(canvas.id) },
             { label: "Export…", onClick: () => requestExport(canvas.id) },
-            { label: "Delete", danger: true, onClick: () => requestDelete(canvas.id) },
+            {
+              label: "Delete",
+              danger: true,
+              onClick: () => requestDelete(canvas.id),
+            },
           ]}
         />
       )}

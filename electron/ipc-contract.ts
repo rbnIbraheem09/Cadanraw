@@ -13,6 +13,7 @@ export interface CanvasMeta {
   tags: string[];
   isPinned: boolean;
   sortOrder: number;
+  folderId: string | null;
 }
 
 export interface SaveResult {
@@ -23,6 +24,8 @@ export interface SaveResult {
 /** Exposed on window.excali.canvases via contextBridge. */
 export interface CanvasApi {
   list(): Promise<CanvasMeta[]>;
+  preview(id: string): Promise<CanvasPreviewElement[]>;
+  move(id: string, folderId: string | null): Promise<CanvasMeta>;
   create(name: string): Promise<CanvasMeta>;
   /** Create a canvas from existing .excalidraw JSON (drag-drop / Open). */
   import(name: string, json: string): Promise<CanvasMeta>;
@@ -71,7 +74,11 @@ export interface LibraryApi {
 /** Exposed on window.excali.versions via contextBridge. */
 export interface VersionApi {
   list(canvasId: string): Promise<VersionMeta[]>;
-  create(canvasId: string, json: string, description: string | null): Promise<VersionMeta>;
+  create(
+    canvasId: string,
+    json: string,
+    description: string | null,
+  ): Promise<VersionMeta>;
   /** Read a snapshot's JSON without side effects (for read-only preview). */
   read(versionId: string): Promise<string>;
   /** Make a snapshot the current canvas (snapshots current first); returns the JSON. */
@@ -87,4 +94,30 @@ export interface FetchedImage {
 export interface ReleaseInfo {
   version: string;
   url: string;
+}
+
+export interface FolderMeta {
+  id: string;
+  name: string;
+  parentId: string | null;
+}
+export interface FolderApi {
+  list(): Promise<FolderMeta[]>;
+  create(name: string, parentId: string | null): Promise<FolderMeta>;
+  rename(id: string, name: string): Promise<FolderMeta>;
+  remove(id: string): Promise<void>;
+}
+
+export interface CanvasPreviewElement {
+  id: string;
+  type: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  stroke: string;
+  background: string;
+  text?: string;
+  kind?: string;
+  points?: number[][];
 }

@@ -5,6 +5,7 @@ import VersionHistory from "./VersionHistory";
 import { useStore } from "../../store/excaliStore";
 
 export default function Sidebar() {
+  const homeOpen=useStore(s=>s.homeOpen);
   const open = useStore((s) => s.sidebarOpen);
   const width = useStore((s) => s.sidebarWidth);
   const setWidth = useStore((s) => s.setSidebarWidth);
@@ -49,7 +50,7 @@ export default function Sidebar() {
         <div className="min-h-0 flex-1 overflow-y-auto">
           <CanvasList />
         </div>
-        <VersionHistory />
+        {!homeOpen && <VersionHistory />}
       </div>
 
       {open && (

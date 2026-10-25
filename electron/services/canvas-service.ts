@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync, existsSync } from "node:fs";
 import type Database from "better-sqlite3";
-import type { CanvasMeta, SaveResult } from "../ipc-contract";
+import type {
+  CanvasMeta,
+  SaveResult,
+  CanvasPreviewElement,
+} from "../ipc-contract";
 import { canvasFilePath, versionsDir } from "../utils/paths";
 import { writeFileAtomic } from "../utils/fs-atomic";
 import { countElements } from "../utils/scene";
@@ -17,6 +21,7 @@ interface CanvasRow {
   tags: string;
   is_pinned: number;
   sort_order: number;
+  folder_id: string | null;
 }
 
 function toMeta(row: CanvasRow): CanvasMeta {
@@ -29,6 +34,7 @@ function toMeta(row: CanvasRow): CanvasMeta {
     tags: safeParseTags(row.tags),
     isPinned: row.is_pinned === 1,
     sortOrder: row.sort_order,
+    folderId: row.folder_id,
   };
 }
 
@@ -44,7 +50,14 @@ function safeParseTags(raw: string): string[] {
 // A fresh canvas is a valid, empty Excalidraw scene so read() never returns
 // junk and the renderer can loadFromBlob it immediately.
 const EMPTY_SCENE = JSON.stringify(
-  { type: "excalidraw", version: 2, source: "cadanraw", elements: [], appState: {}, files: {} },
+  {
+    type: "excalidraw",
+    version: 2,
+    source: "cadanraw",
+    elements: [],
+    appState: {},
+    files: {},
+  },
   null,
   2,
 );
@@ -75,7 +88,9 @@ export function createCanvasService({ db, dataDir, trash }: CanvasServiceDeps) {
       `UPDATE canvases SET updated_at = datetime('now'), element_count = @element_count WHERE id = @id`,
     ),
     rename: db.prepare(`UPDATE canvases SET name = @name WHERE id = @id`),
-    setPinned: db.prepare(`UPDATE canvases SET is_pinned = @pinned WHERE id = @id`),
+    setPinned: db.prepare(
+      `UPDATE canvases SET is_pinned = @pinned WHERE id = @id`,
+    ),
     del: db.prepare(`DELETE FROM canvases WHERE id = ?`),
   };
 
@@ -88,6 +103,57 @@ export function createCanvasService({ db, dataDir, trash }: CanvasServiceDeps) {
   return {
     list(): CanvasMeta[] {
       return (stmts.list.all() as CanvasRow[]).map(toMeta);
+    },
+
+    preview(id: string): CanvasPreviewElement[] {
+      const row = getRow(id);
+      const scene = JSON.parse(readFileSync(row.file_path, "utf8"));
+      return (Array.isArray(scene.elements) ? scene.elements : [])
+        .filter(
+          (e: any) =>
+            !e.isDeleted && Number.isFinite(e.x) && Number.isFinite(e.y),
+        )
+        .slice(0, 300)
+        .map((e: any) => ({
+          id: String(e.id),
+          type: String(e.type),
+          x: e.x,
+          y: e.y,
+          width: Number(e.width) || 1,
+          height: Number(e.height) || 1,
+          stroke: typeof e.strokeColor === "string" ? e.strokeColor : "#a5b5c5",
+          background:
+            typeof e.backgroundColor === "string"
+              ? e.backgroundColor
+              : "transparent",
+          text: String(
+            e.customData?.cadanrawBlock?.title || e.text || "",
+          ).slice(0, 120),
+          kind: e.customData?.cadanrawBlock?.kind,
+          points: Array.isArray(e.points)
+            ? e.points
+                .slice(0, 100)
+                .filter(
+                  (p: any) =>
+                    Array.isArray(p) &&
+                    p.length >= 2 &&
+                    p.every(Number.isFinite),
+                )
+            : undefined,
+        }));
+    },
+    move(id: string, folderId: string | null): CanvasMeta {
+      getRow(id);
+      if (
+        folderId &&
+        !db.prepare("SELECT id FROM folders WHERE id = ?").get(folderId)
+      )
+        throw new Error("Folder not found");
+      db.prepare("UPDATE canvases SET folder_id = ? WHERE id = ?").run(
+        folderId,
+        id,
+      );
+      return toMeta(getRow(id));
     },
 
     create(name: string): CanvasMeta {
@@ -157,6 +223,10 @@ export function createCanvasService({ db, dataDir, trash }: CanvasServiceDeps) {
         file_path: filePath,
         element_count: row.element_count,
       });
+      db.prepare("UPDATE canvases SET folder_id = ? WHERE id = ?").run(
+        row.folder_id,
+        newId,
+      );
       return toMeta(getRow(newId));
     },
 

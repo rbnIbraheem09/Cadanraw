@@ -11,9 +11,30 @@ export interface CanvasMeta {
   tags: string[];
   isPinned: boolean;
   sortOrder: number;
+  folderId: string | null;
 }
 
 export interface SaveResult {
   updatedAt: string;
   elementCount: number;
+}
+
+export interface FolderMeta {
+  id: string;
+  name: string;
+  parentId: string | null;
+}
+
+export interface CanvasPreviewElement {
+  id: string;
+  type: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  stroke: string;
+  background: string;
+  text?: string;
+  kind?: string;
+  points?: number[][];
 }

@@ -1,7 +1,7 @@
 {
   "name": "cadanraw",
   "productName": "Cadanraw",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "description": "Cadanraw — a local-first whiteboard app powered by Excalidraw",
   "private": true,
   "main": "dist-electron/main.js",
@@ -19,7 +19,8 @@
     "postinstall": "node scripts/copy-excalidraw-fonts.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "test": "node scripts/test-with-abi.mjs",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "collab:serve": "node dist-electron/collaboration-server.js"
   },
   "comment": "Only main-process (runtime) modules belong in dependencies; renderer libs are bundled into dist/ by Vite and live in devDependencies so electron-builder doesn't pack them.",
   "dependencies": {

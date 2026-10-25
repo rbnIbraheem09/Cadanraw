@@ -22,3 +22,6 @@ IMPLEMENTATION_PLAN.md
 # os / logs
 .DS_Store
 *.log
+
+# Self-hosted collaboration room data (contains sharing keys)
+cadanraw-collab-data/

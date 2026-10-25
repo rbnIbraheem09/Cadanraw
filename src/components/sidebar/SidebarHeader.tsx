@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Import } from "lucide-react";
 import { useStore } from "../../store/excaliStore";
 
 function semverGt(latest: string, current: string): boolean {
@@ -56,6 +56,7 @@ export default function SidebarHeader() {
           )}
         </div>
         <div className="flex items-center gap-1">
+          <button className="sidebar-import" aria-label="Import Excalidraw file" title="Import Excalidraw file" onClick={()=>void useStore.getState().importFiles()}><Import size={14}/></button>
           <button
             onClick={() => void checkForUpdates()}
             disabled={checking}

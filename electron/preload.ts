@@ -13,10 +13,13 @@ import type {
 
 const canvases: CanvasApi = {
   list: () => ipcRenderer.invoke("canvases:list"),
+  preview: (id) => ipcRenderer.invoke("canvases:preview", id),
+  move: (id, folderId) => ipcRenderer.invoke("canvases:move", { id, folderId }),
   create: (name) => ipcRenderer.invoke("canvases:create", name),
   import: (name, json) => ipcRenderer.invoke("canvases:import", { name, json }),
   duplicate: (id) => ipcRenderer.invoke("canvases:duplicate", id),
-  setPinned: (id, pinned) => ipcRenderer.invoke("canvases:set-pinned", { id, pinned }),
+  setPinned: (id, pinned) =>
+    ipcRenderer.invoke("canvases:set-pinned", { id, pinned }),
   read: (id) => ipcRenderer.invoke("canvases:read", id),
   save: (id, json) => ipcRenderer.invoke("canvases:save", { id, json }),
   rename: (id, name) => ipcRenderer.invoke("canvases:rename", { id, name }),
@@ -43,6 +46,26 @@ const dialogApi: DialogApi = {
 };
 
 const api = {
+  agent: {
+    status: () => ipcRenderer.invoke("agent:status"),
+    start: (allowWrite: boolean) =>
+      ipcRenderer.invoke("agent:start", allowWrite),
+    stop: () => ipcRenderer.invoke("agent:stop"),
+    onRequest: (
+      cb: (request: {
+        id: string;
+        method: string;
+        args: Record<string, unknown>;
+      }) => void,
+    ) => {
+      const handler = (_e: unknown, request: Parameters<typeof cb>[0]) =>
+        cb(request);
+      ipcRenderer.on("agent:request", handler);
+      return () => ipcRenderer.removeListener("agent:request", handler);
+    },
+    respond: (response: { id: string; result?: unknown; error?: string }) =>
+      ipcRenderer.send("agent:response", response),
+  },
   platform: process.platform,
   getAppInfo: (): Promise<{
     name: string;
@@ -50,6 +73,10 @@ const api = {
     electron: string;
     chrome: string;
   }> => ipcRenderer.invoke("app:get-info"),
+  getLinkMetadata: (
+    url: string,
+  ): Promise<{ title: string; image: string | null } | null> =>
+    ipcRenderer.invoke("app:link-metadata", url),
   fetchImage: (url: string): Promise<FetchedImage | null> =>
     ipcRenderer.invoke("app:fetch-image", url),
   getOgImage: (url: string): Promise<string | null> =>
@@ -58,6 +85,14 @@ const api = {
     ipcRenderer.invoke("app:check-for-updates"),
   openExternal: (url: string): Promise<void> =>
     ipcRenderer.invoke("app:open-external", url),
+  folders: {
+    list: () => ipcRenderer.invoke("folders:list"),
+    create: (name: string, parentId: string | null) =>
+      ipcRenderer.invoke("folders:create", { name, parentId }),
+    rename: (id: string, name: string) =>
+      ipcRenderer.invoke("folders:rename", { id, name }),
+    remove: (id: string) => ipcRenderer.invoke("folders:remove", id),
+  },
   canvases,
   versions,
   library,
@@ -67,11 +102,13 @@ const api = {
     toggleMaximize: (): Promise<boolean> =>
       ipcRenderer.invoke("window:toggle-maximize"),
     close: (): Promise<void> => ipcRenderer.invoke("window:close"),
-    isMaximized: (): Promise<boolean> => ipcRenderer.invoke("window:is-maximized"),
+    isMaximized: (): Promise<boolean> =>
+      ipcRenderer.invoke("window:is-maximized"),
     onMaximizedChange: (cb: (maximized: boolean) => void): (() => void) => {
       const handler = (_e: unknown, maximized: boolean) => cb(maximized);
       ipcRenderer.on("window:maximized-change", handler);
-      return () => ipcRenderer.removeListener("window:maximized-change", handler);
+      return () =>
+        ipcRenderer.removeListener("window:maximized-change", handler);
     },
   },
   /** Subscribe to native-menu actions (New, Open, Export…). Returns an unsubscribe. */

@@ -1,0 +1,8 @@
+.git
+node_modules
+dist
+dist-electron
+dist-app
+excalidraw-source
+cadanraw-collab-data
+.DS_Store

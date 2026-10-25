@@ -4,7 +4,7 @@ export function formatRelativeTime(sqliteUtc: string): string {
   if (Number.isNaN(ts)) return "";
   const sec = Math.floor((Date.now() - ts) / 1000);
   if (sec < 45) return "just now";
-  const min = Math.floor(sec / 60);
+  const min = Math.max(1, Math.floor(sec / 60));
   if (min < 60) return `${min}m ago`;
   const hr = Math.floor(min / 60);
   if (hr < 24) return `${hr}h ago`;

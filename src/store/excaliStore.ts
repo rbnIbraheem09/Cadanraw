@@ -15,7 +15,7 @@ import type {
   ExcalidrawImperativeAPI,
   LibraryItems,
 } from "@excalidraw/excalidraw/types";
-import type { CanvasMeta } from "../types/canvas";
+import type { CanvasMeta, FolderMeta } from "../types/canvas";
 import type { VersionMeta } from "../types/version";
 
 export const DEFAULT_SIDEBAR_WIDTH = 264;
@@ -40,7 +40,9 @@ function hashSceneJson(json: string): number {
   try {
     const data = JSON.parse(json) as { elements?: unknown[] };
     return hashElementsVersion(
-      (data.elements ?? []) as unknown as Parameters<typeof hashElementsVersion>[0],
+      (data.elements ?? []) as unknown as Parameters<
+        typeof hashElementsVersion
+      >[0],
     );
   } catch {
     return 0;
@@ -50,6 +52,23 @@ function hashSceneJson(json: string): number {
 interface ExcaliState {
   // ── Data ──
   canvases: CanvasMeta[];
+  folders: FolderMeta[];
+  homeOpen: boolean;
+  currentFolderId: string | null;
+  libraryScope: "all" | "pinned" | "folder";
+  libraryView: "grid" | "list";
+  movingCanvasId: string | null;
+  goHome: (
+    folderId?: string | null,
+    scope?: "all" | "pinned" | "folder",
+  ) => Promise<void>;
+  setLibraryView: (view: "grid" | "list") => void;
+  createFolder: (name: string, parentId: string | null) => Promise<void>;
+  renameFolder: (id: string, name: string) => Promise<void>;
+  removeFolder: (id: string) => Promise<void>;
+  moveCanvas: (id: string, folderId: string | null) => Promise<void>;
+  setMovingCanvas: (id: string | null) => void;
+  importFiles: () => Promise<void>;
   activeCanvasId: string | null;
   activeCanvasJson: string | null;
   loading: boolean;
@@ -148,6 +167,75 @@ const freshCanvasState = (lastSavedAt: string | null, baseHash: number) => ({
 export const useStore = create<ExcaliState>()(
   persist(
     (set, get) => ({
+      folders: [],
+      homeOpen: true,
+      currentFolderId: null,
+      libraryScope: "all",
+      libraryView: "grid",
+      movingCanvasId: null,
+      setLibraryView: (libraryView) => set({ libraryView }),
+      setMovingCanvas: (movingCanvasId) => set({ movingCanvasId }),
+      goHome: async (folderId = null, scope = "all") => {
+        const json = await get().saveActiveCanvas();
+        if (!json && get().isDirty && get().api) return;
+        ++loadToken;
+        set({
+          homeOpen: true,
+          currentFolderId: folderId,
+          libraryScope: scope,
+          api: null,
+          loading: false,
+          ...(json ? { activeCanvasJson: json } : {}),
+        });
+      },
+      createFolder: async (name, parentId) => {
+        try {
+          await window.excali.folders.create(name, parentId);
+          await get().refreshList();
+        } catch (e) {
+          get().pushToast(
+            e instanceof Error ? e.message : "Could not create folder",
+            "error",
+          );
+        }
+      },
+      renameFolder: async (id, name) => {
+        try {
+          await window.excali.folders.rename(id, name);
+          await get().refreshList();
+        } catch {
+          get().pushToast("Could not rename folder", "error");
+        }
+      },
+      removeFolder: async (id) => {
+        try {
+          const parent =
+            get().folders.find((f) => f.id === id)?.parentId ?? null;
+          await window.excali.folders.remove(id);
+          if (get().currentFolderId === id) set({ currentFolderId: parent });
+          await get().refreshList();
+        } catch {
+          get().pushToast("Could not remove folder", "error");
+        }
+      },
+      moveCanvas: async (id, folderId) => {
+        try {
+          await window.excali.canvases.move(id, folderId);
+          await get().refreshList();
+          set({ movingCanvasId: null });
+        } catch {
+          get().pushToast("Could not move board", "error");
+        }
+      },
+      importFiles: async () => {
+        try {
+          const files = await window.excali.dialog.openFile();
+          for (const file of files)
+            await get().importCanvas(file.name, file.json);
+        } catch {
+          get().pushToast("Could not import file", "error");
+        }
+      },
       canvases: [],
       activeCanvasId: null,
       activeCanvasJson: null,
@@ -197,9 +285,14 @@ export const useStore = create<ExcaliState>()(
         try {
           const json = await window.excali.library.read();
           const items: LibraryItems = json
-            ? await loadLibraryFromBlob(new Blob([json], { type: "application/json" }))
+            ? await loadLibraryFromBlob(
+                new Blob([json], { type: "application/json" }),
+              )
             : [];
-          set({ libraryItems: items, savedLibraryHash: getLibraryItemsHash(items) });
+          set({
+            libraryItems: items,
+            savedLibraryHash: getLibraryItemsHash(items),
+          });
         } catch (err) {
           console.error("Failed to load library", err);
           set({ libraryItems: [] });
@@ -225,7 +318,11 @@ export const useStore = create<ExcaliState>()(
       },
 
       refreshList: async () => {
-        set({ canvases: await window.excali.canvases.list() });
+        const [canvases, folders] = await Promise.all([
+          window.excali.canvases.list(),
+          window.excali.folders.list(),
+        ]);
+        set({ canvases, folders });
       },
 
       refreshVersions: async () => {
@@ -237,20 +334,25 @@ export const useStore = create<ExcaliState>()(
         await get().refreshList();
         await get().loadLibrary(); // load before opening a canvas so it seeds the editor
         const last = get().lastActiveCanvasId;
-        if (last && get().canvases.some((c) => c.id === last)) {
+        if (
+          !get().homeOpen &&
+          last &&
+          get().canvases.some((c) => c.id === last)
+        ) {
           await get().openCanvas(last);
         }
       },
 
       openCanvas: async (id) => {
-        if (id === get().activeCanvasId) return;
+        if (id === get().activeCanvasId && !get().homeOpen) return;
         await get().saveActiveCanvas(); // never lose the current canvas's edits
         const token = ++loadToken;
-        set({ loading: true });
+        set({ loading: true, homeOpen: false });
         try {
           const json = await window.excali.canvases.read(id);
           if (token !== loadToken) return; // a newer open superseded this one
           set({
+            api: null,
             activeCanvasId: id,
             activeCanvasJson: json,
             lastActiveCanvasId: id,
@@ -271,12 +373,15 @@ export const useStore = create<ExcaliState>()(
       createCanvas: async (name) => {
         await get().saveActiveCanvas();
         const meta = await window.excali.canvases.create(name);
+        if (get().currentFolderId)
+          await window.excali.canvases.move(meta.id, get().currentFolderId);
         await get().refreshList();
         const token = ++loadToken;
         try {
           const json = await window.excali.canvases.read(meta.id);
           if (token !== loadToken) return;
           set({
+            homeOpen: false,
             activeCanvasId: meta.id,
             activeCanvasJson: json,
             lastActiveCanvasId: meta.id,
@@ -292,9 +397,12 @@ export const useStore = create<ExcaliState>()(
         await get().saveActiveCanvas();
         try {
           const meta = await window.excali.canvases.import(name, json);
+          if (get().currentFolderId)
+            await window.excali.canvases.move(meta.id, get().currentFolderId);
           await get().refreshList();
           const fresh = await window.excali.canvases.read(meta.id);
           set({
+            homeOpen: false,
             activeCanvasId: meta.id,
             activeCanvasJson: fresh,
             lastActiveCanvasId: meta.id,
@@ -304,14 +412,18 @@ export const useStore = create<ExcaliState>()(
           get().pushToast(`Imported “${meta.name}”`, "success");
         } catch (err) {
           console.error("Import failed", err);
-          get().pushToast("Couldn't import — not a valid Excalidraw file", "error");
+          get().pushToast(
+            "Couldn't import — not a valid Excalidraw file",
+            "error",
+          );
         }
       },
 
       exportActiveCanvas: async (format) => {
         const { api, activeCanvasId, canvases } = get();
         if (!api || !activeCanvasId) return;
-        const name = canvases.find((c) => c.id === activeCanvasId)?.name || "canvas";
+        const name =
+          canvases.find((c) => c.id === activeCanvasId)?.name || "canvas";
         const elements = api.getSceneElements();
         const appState = api.getAppState();
         const files = api.getFiles();
@@ -363,6 +475,7 @@ export const useStore = create<ExcaliState>()(
           await get().refreshList();
           const json = await window.excali.canvases.read(meta.id);
           set({
+            homeOpen: false,
             activeCanvasId: meta.id,
             activeCanvasJson: json,
             lastActiveCanvasId: meta.id,
@@ -388,7 +501,9 @@ export const useStore = create<ExcaliState>()(
 
       renameCanvas: async (id, name) => {
         const meta = await window.excali.canvases.rename(id, name);
-        set((s) => ({ canvases: s.canvases.map((c) => (c.id === id ? meta : c)) }));
+        set((s) => ({
+          canvases: s.canvases.map((c) => (c.id === id ? meta : c)),
+        }));
       },
 
       setSearchQuery: (q) => set({ searchQuery: q }),
@@ -433,7 +548,11 @@ export const useStore = create<ExcaliState>()(
             lastSavedAt: res.updatedAt,
             canvases: s.canvases.map((c) =>
               c.id === activeCanvasId
-                ? { ...c, updatedAt: res.updatedAt, elementCount: res.elementCount }
+                ? {
+                    ...c,
+                    updatedAt: res.updatedAt,
+                    elementCount: res.elementCount,
+                  }
                 : c,
             ),
           }));
@@ -441,7 +560,10 @@ export const useStore = create<ExcaliState>()(
         } catch (err) {
           console.error("Failed to save canvas", err);
           set({ saving: false });
-          get().pushToast("Couldn't save — changes kept in the editor", "error");
+          get().pushToast(
+            "Couldn't save — changes kept in the editor",
+            "error",
+          );
           return null;
         }
 
@@ -470,7 +592,11 @@ export const useStore = create<ExcaliState>()(
         const id = get().activeCanvasId;
         if (!json || !id) return;
         try {
-          await window.excali.versions.create(id, json, description.trim() || null);
+          await window.excali.versions.create(
+            id,
+            json,
+            description.trim() || null,
+          );
           set({ editedSinceVersion: false, lastVersionAt: Date.now() });
           await get().refreshVersions();
           get().pushToast("Version saved", "success");
@@ -506,7 +632,8 @@ export const useStore = create<ExcaliState>()(
           const { json } = await window.excali.versions.restore(versionId);
           await get().refreshList();
           const updatedAt =
-            get().canvases.find((c) => c.id === activeCanvasId)?.updatedAt ?? null;
+            get().canvases.find((c) => c.id === activeCanvasId)?.updatedAt ??
+            null;
           set({
             activeCanvasJson: json,
             ...freshCanvasState(updatedAt, hashSceneJson(json)),
@@ -535,7 +662,12 @@ export const useStore = create<ExcaliState>()(
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       toggleHistory: () => set((s) => ({ historyOpen: !s.historyOpen })),
       setSidebarWidth: (w) =>
-        set({ sidebarWidth: Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, w)) }),
+        set({
+          sidebarWidth: Math.max(
+            MIN_SIDEBAR_WIDTH,
+            Math.min(MAX_SIDEBAR_WIDTH, w),
+          ),
+        }),
       openNewCanvasDialog: () => set({ newCanvasDialogOpen: true }),
       closeNewCanvasDialog: () => set({ newCanvasDialogOpen: false }),
       openSaveVersionDialog: () => {
@@ -554,7 +686,8 @@ export const useStore = create<ExcaliState>()(
         set((s) => ({ toasts: [...s.toasts, { id, message, type }] }));
         setTimeout(() => get().dismissToast(id), 2600);
       },
-      dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+      dismissToast: (id) =>
+        set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
     }),
     {
       name: "excali-ui",
@@ -563,6 +696,7 @@ export const useStore = create<ExcaliState>()(
         sidebarWidth: s.sidebarWidth,
         historyOpen: s.historyOpen,
         lastActiveCanvasId: s.lastActiveCanvasId,
+        libraryView: s.libraryView,
       }),
     },
   ),

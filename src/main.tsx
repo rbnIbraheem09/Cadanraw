@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import SharedCanvas from "./components/canvas/SharedCanvas";
 // Self-hosted fonts (bundled by Vite) — the app works fully offline, no CDN.
 import "@fontsource/hanken-grotesk/400.css";
 import "@fontsource/hanken-grotesk/500.css";
@@ -18,6 +19,6 @@ if (!container) throw new Error("Root element #root not found");
 // under StrictMode's intentional double-mount in dev.
 createRoot(container).render(
   <React.StrictMode>
-    <App />
+    {window.excali ? <App /> : <SharedCanvas />}
   </React.StrictMode>,
 );

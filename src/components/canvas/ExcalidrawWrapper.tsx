@@ -1,29 +1,28 @@
 import { useMemo, useEffect, useRef } from "react";
-import { Excalidraw, loadFromBlob, hashElementsVersion } from "@excalidraw/excalidraw";
+import {
+  Excalidraw,
+  loadFromBlob,
+  hashElementsVersion,
+  viewportCoordsToSceneCoords,
+} from "@excalidraw/excalidraw";
 import type {
   ExcalidrawImperativeAPI,
   LibraryItems,
 } from "@excalidraw/excalidraw/types";
 import "@excalidraw/excalidraw/index.css";
 
+import { syncDotGrid } from "../../lib/canvas-surface";
+import CanvasBlock from "../blocks/CanvasBlock";
+import {
+  blockData,
+  insertBlock,
+  updateBlock,
+  normalizeBlockElements,
+} from "../../lib/blocks";
+
 // ── URL / image paste helpers ─────────────────────────────────────────────────
 
-const YOUTUBE_PATTERNS = [
-  /youtube\.com\/watch\?(?:[^#&]*&)*v=([a-zA-Z0-9_-]{11})/,
-  /youtu\.be\/([a-zA-Z0-9_-]{11})/,
-  /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/,
-  /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
-];
-
 const IMAGE_EXT_RE = /\.(jpe?g|png|gif|webp|bmp|tiff?|avif|ico)(\?[^#]*)?$/i;
-
-function extractYouTubeId(url: string): string | null {
-  for (const p of YOUTUBE_PATTERNS) {
-    const m = url.match(p);
-    if (m) return m[1];
-  }
-  return null;
-}
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
@@ -46,7 +45,8 @@ async function sha1Hex(text: string): Promise<string> {
 function loadImageDimensions(src: string): Promise<{ w: number; h: number }> {
   return new Promise((resolve) => {
     const img = new Image();
-    img.onload = () => resolve({ w: img.naturalWidth || 400, h: img.naturalHeight || 300 });
+    img.onload = () =>
+      resolve({ w: img.naturalWidth || 400, h: img.naturalHeight || 300 });
     img.onerror = () => resolve({ w: 400, h: 300 });
     img.src = src;
   });
@@ -69,17 +69,15 @@ async function embedImageIntoCanvas(
 
   // Convert viewport center to scene (canvas) coordinates.
   const appState = api.getAppState();
-  const zoom = (appState as { zoom: { value: number } }).zoom?.value ?? 1;
-  const sceneX =
-    ((appState as { width: number }).width / 2 -
-      (appState as { scrollX: number }).scrollX) /
-      zoom -
-    elemW / 2;
-  const sceneY =
-    ((appState as { height: number }).height / 2 -
-      (appState as { scrollY: number }).scrollY) /
-      zoom -
-    elemH / 2;
+  const center = viewportCoordsToSceneCoords(
+    {
+      clientX: appState.offsetLeft + appState.width / 2,
+      clientY: appState.offsetTop + appState.height / 2,
+    },
+    appState,
+  );
+  const sceneX = center.x - elemW / 2;
+  const sceneY = center.y - elemH / 2;
 
   // Register the file in Excalidraw's binary-file cache.
   (api.addFiles as (files: unknown[]) => void)([
@@ -129,35 +127,20 @@ async function embedImageIntoCanvas(
   });
 }
 
-async function handleUrlPaste(url: string, api: ExcalidrawImperativeAPI) {
-  // YouTube → embed thumbnail with a link back to the video.
-  const ytId = extractYouTubeId(url);
-  if (ytId) {
-    const thumbUrl = `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
-    const img = await window.excali.fetchImage(thumbUrl);
-    if (img) {
-      await embedImageIntoCanvas(api, img.dataURL, img.mimeType, url);
-      return;
-    }
+async function handleUrlPaste(
+  url: string,
+  api: ExcalidrawImperativeAPI,
+  alive: () => boolean,
+) {
+  // Insert the card synchronously. A failed network request never eats a paste.
+  if (!IMAGE_EXT_RE.test(url)) {
+    insertBlock(api, "link", url);
+    return;
   }
-
-  // Direct image URL (detected by file extension).
-  if (IMAGE_EXT_RE.test(url)) {
-    const img = await window.excali.fetchImage(url);
-    if (img) {
-      await embedImageIntoCanvas(api, img.dataURL, img.mimeType, url);
-      return;
-    }
-  }
-
-  // Generic webpage → try to pull the og:image and embed that.
-  const ogUrl = await window.excali.getOgImage(url);
-  if (ogUrl) {
-    const img = await window.excali.fetchImage(ogUrl);
-    if (img) {
-      await embedImageIntoCanvas(api, img.dataURL, img.mimeType, url);
-    }
-  }
+  const img = await window.excali.fetchImage(url).catch(() => null);
+  if (!alive()) return;
+  if (img) await embedImageIntoCanvas(api, img.dataURL, img.mimeType, url);
+  else insertBlock(api, "link", url);
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -165,6 +148,7 @@ async function handleUrlPaste(url: string, api: ExcalidrawImperativeAPI) {
 interface ExcalidrawWrapperProps {
   json: string;
   onApiReady?: (api: ExcalidrawImperativeAPI) => void;
+  onPointerUpdate?: (pointer: { x: number; y: number }) => void;
   onSceneChange?: (sceneHash: number) => void;
   viewMode?: boolean;
   libraryItems?: LibraryItems;
@@ -181,32 +165,56 @@ export default function ExcalidrawWrapper({
   json,
   onApiReady,
   onSceneChange,
+  onPointerUpdate,
   viewMode = false,
   libraryItems,
   onLibraryChange,
 }: ExcalidrawWrapperProps) {
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
 
   const initialData = useMemo(
     () =>
       loadFromBlob(new Blob([json], { type: "application/json" }), null, null)
-        .then((scene) => ({ ...scene, libraryItems }))
-        .catch(() => ({ libraryItems })),
+        .then((scene) => ({
+          ...scene,
+          elements: normalizeBlockElements(scene.elements ?? []),
+          appState: { ...scene.appState, viewBackgroundColor: "transparent" },
+          libraryItems,
+        }))
+        .catch(() => ({
+          appState: { viewBackgroundColor: "transparent" },
+          libraryItems,
+        })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [json],
   );
+
+  // Repair cards created during development or imported from earlier renderers.
+  useEffect(() => {
+    const api = apiRef.current;
+    if (!api) return;
+    const current = api.getSceneElementsIncludingDeleted();
+    const normalized = normalizeBlockElements(current);
+    if (normalized.some((element, index) => element !== current[index]))
+      api.updateScene({ elements: normalized });
+  }, [json]);
 
   // Intercept paste events that contain only a URL and embed the target
   // image into the canvas instead of pasting the raw URL text.
   useEffect(() => {
     if (viewMode) return;
 
+    let alive = true;
     const handlePaste = (e: ClipboardEvent) => {
       if (isEditableTarget(e.target)) return;
 
       // If the clipboard contains image data, let Excalidraw handle it.
-      const items = e.clipboardData?.items ? Array.from(e.clipboardData.items) : [];
-      if (items.some((i) => i.kind === "file" && i.type.startsWith("image/"))) return;
+      const items = e.clipboardData?.items
+        ? Array.from(e.clipboardData.items)
+        : [];
+      if (items.some((i) => i.kind === "file" && i.type.startsWith("image/")))
+        return;
 
       const text = e.clipboardData?.getData("text/plain")?.trim() ?? "";
       if (!text) return;
@@ -227,29 +235,58 @@ export default function ExcalidrawWrapper({
 
       const api = apiRef.current;
       if (api) {
-        void handleUrlPaste(text, api);
+        void handleUrlPaste(text, api, () => alive);
       }
     };
 
     window.addEventListener("paste", handlePaste, { capture: true });
-    return () => window.removeEventListener("paste", handlePaste, { capture: true });
+    return () => {
+      alive = false;
+      window.removeEventListener("paste", handlePaste, { capture: true });
+    };
   }, [viewMode]);
 
   return (
-    <div className="h-full w-full">
+    <div className="h-full w-full dot-surface" ref={surfaceRef}>
       <Excalidraw
         excalidrawAPI={(api) => {
           apiRef.current = api;
           onApiReady?.(api);
         }}
+        onLinkOpen={(element, event) => {
+          const data = blockData(element);
+          if (data) {
+            event.preventDefault();
+            if (data.url) {
+              if (window.excali) void window.excali.openExternal(data.url);
+              else window.open(data.url, "_blank", "noopener,noreferrer");
+            }
+          }
+        }}
+        validateEmbeddable={(link) =>
+          link === "https://cadanraw.local/block" ? true : undefined
+        }
+        renderEmbeddable={(element) => {
+          const data = blockData(element);
+          return data ? (
+            <CanvasBlock
+              data={data}
+              readOnly={viewMode}
+              onChange={(patch) => {
+                if (apiRef.current)
+                  updateBlock(apiRef.current, element.id, patch);
+              }}
+            />
+          ) : null;
+        }}
         initialData={initialData}
         theme="dark"
+        onPointerUpdate={(payload) => onPointerUpdate?.(payload.pointer)}
         viewModeEnabled={viewMode}
-        onChange={
-          viewMode
-            ? undefined
-            : (elements) => onSceneChange?.(hashElementsVersion(elements))
-        }
+        onChange={(elements, state) => {
+          syncDotGrid(surfaceRef.current, state);
+          if (!viewMode) onSceneChange?.(hashElementsVersion(elements));
+        }}
         onLibraryChange={onLibraryChange}
       />
     </div>

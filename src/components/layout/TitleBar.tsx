@@ -12,6 +12,8 @@ export default function TitleBar() {
   const showWindowControls = !isMac;
   const [isMaximized, setIsMaximized] = useState(false);
   const toggleSidebar = useStore((s) => s.toggleSidebar);
+  const homeOpen=useStore(s=>s.homeOpen);
+  const goHome=useStore(s=>s.goHome);
   const activeName = useStore((s) => {
     const c = s.canvases.find((x) => x.id === s.activeCanvasId);
     return c?.name ?? null;
@@ -58,7 +60,7 @@ export default function TitleBar() {
         <span className="shrink-0 text-[13px] font-semibold tracking-tight text-ink">
           Cadanraw
         </span>
-        {activeName && (
+        {activeName && !homeOpen && (
           <>
             <span className="shrink-0 text-ink-muted">/</span>
             <span className="truncate text-[13px] text-ink-dim">{activeName}</span>
@@ -66,6 +68,7 @@ export default function TitleBar() {
         )}
       </div>
 
+      {!homeOpen && <button className="no-drag title-home" onClick={()=>void goHome()}>Home</button>}
       {showWindowControls && (
         <div className="no-drag ml-auto flex h-full shrink-0 items-stretch">
           <button

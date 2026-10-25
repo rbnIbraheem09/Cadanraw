@@ -7,7 +7,9 @@ export function registerCanvasHandlers(
   ipcMain: IpcMain,
   service: CanvasService,
 ): void {
+  ipcMain.handle("canvases:preview", (_e,id:string)=>service.preview(id));
   ipcMain.handle("canvases:list", () => service.list());
+  ipcMain.handle("canvases:move", (_e, { id, folderId }) => service.move(id, folderId));
   ipcMain.handle("canvases:create", (_e, name: string) => service.create(name));
   ipcMain.handle(
     "canvases:import",

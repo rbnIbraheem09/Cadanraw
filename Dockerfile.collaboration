@@ -1,0 +1,16 @@
+FROM node:22-bookworm-slim AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY . .
+RUN npm run copy:fonts && npm run build:renderer && npm run build:electron
+
+FROM node:22-alpine
+WORKDIR /app
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/dist-electron ./dist-electron
+RUN mkdir -p /data && chown node:node /data
+USER node
+ENV HOST=0.0.0.0 PORT=8787 CADANRAW_COLLAB_DATA_DIR=/data
+EXPOSE 8787
+CMD ["node", "dist-electron/collaboration-server.js"]
