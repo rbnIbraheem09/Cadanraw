@@ -136,6 +136,22 @@ export const TOOLS: {
   },
 ];
 
+/** The MCP tools/list payload; write tools appear only when editing is allowed. */
+export function listTools(allowWrite: boolean) {
+  return TOOLS.filter((t) => allowWrite || !t.write).map(
+    ({ write, destructive, ...tool }) => ({
+      ...tool,
+      annotations: {
+        readOnlyHint: !write,
+        ...(write ? { destructiveHint: !!destructive } : {}),
+      },
+    }),
+  );
+}
+
+export const SERVER_INSTRUCTIONS =
+  "Read and edit boards in the open Cadanraw app. Element tools act on the open canvas; use manage_canvas to create or switch canvases. Coordinates are scene units. Edits are undoable by the user. Writes require the user to enable editing in the app.";
+
 export interface AgentConnection {
   enabled: boolean;
   url: string;
@@ -166,9 +182,15 @@ export function createAgentServer(
   return {
     status: () => ({ ...info }),
     stop,
-    async start(allowWrite = false) {
+    /** Start (or restart) the endpoint, reusing a saved token and port when given. */
+    async start(
+      allowWrite = false,
+      saved: { token?: string; port?: number } = {},
+    ) {
       await stop();
-      const token = randomBytes(32).toString("hex");
+      const token = /^[0-9a-f]{64}$/.test(saved.token ?? "")
+        ? saved.token!
+        : randomBytes(32).toString("hex");
       const next = createServer(async (req, res) => {
         const send = (status: number, body?: unknown) => {
           res.writeHead(status, {
@@ -230,25 +252,14 @@ export function createAgentServer(
                 protocolVersion: "2025-03-26",
                 capabilities: { tools: {} },
                 serverInfo: { name: "cadanraw", version },
-                instructions:
-                  "Read and edit boards in the open Cadanraw app. Element tools act on the open canvas; use manage_canvas to create or switch canvases. Coordinates are scene units. Edits are undoable by the user. Writes require the user to enable editing in the app.",
+                instructions: SERVER_INSTRUCTIONS,
               };
               break;
             case "ping":
               result = {};
               break;
             case "tools/list":
-              result = {
-                tools: TOOLS.filter((t) => info.allowWrite || !t.write).map(
-                  ({ write, destructive, ...tool }) => ({
-                    ...tool,
-                    annotations: {
-                      readOnlyHint: !write,
-                      ...(write ? { destructiveHint: !!destructive } : {}),
-                    },
-                  }),
-                ),
-              };
+              result = { tools: listTools(info.allowWrite) };
               break;
             case "tools/call": {
               const name = rpc.params?.name;
@@ -308,10 +319,13 @@ export function createAgentServer(
       });
       next.requestTimeout = 15000;
       try {
-        await new Promise<void>((resolve, reject) => {
-          next.once("error", reject);
-          next.listen(0, "127.0.0.1", resolve);
-        });
+        const listen = (port: number) =>
+          new Promise<void>((resolve, reject) => {
+            next.once("error", reject);
+            next.listen(port, "127.0.0.1", resolve);
+          });
+        // Keep the previous port so saved HTTP configs keep working.
+        await listen(saved.port ?? 0).catch(() => listen(0));
         const address = next.address();
         if (!address || typeof address === "string")
           throw new Error("Could not bind agent server");

@@ -265,7 +265,8 @@
   font-size: 11px;
   color: var(--text-dim);
 }
-.connection-section > button:not(.panel-primary) {
+.connection-section > button:not(.panel-primary),
+.connection-more button {
   padding: 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -284,6 +285,17 @@
 .connection-live {
   font-size: 11px;
   color: var(--accent);
+}
+.connection-more > div {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.connection-more summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-dim);
 }
 .workspace-reopen {
   position: absolute;

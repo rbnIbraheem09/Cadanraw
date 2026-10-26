@@ -59,9 +59,27 @@ Replace the domain with your own and point DNS at the server. Restrict direct ac
 
 ## Connect an agent over MCP
 
-In **Connect → Agent access**, optionally choose **Allow agents to edit boards**, then enable access and copy the MCP configuration into a client that supports HTTP MCP endpoints and Authorization headers.
+In **Connect → Agent access**, optionally choose **Allow agents to edit boards**, then choose **Enable agent access**. Access stays on between launches until you turn it off.
 
-The endpoint listens on an ephemeral port on `127.0.0.1` and requires a random bearer token. The URL alone does not grant access. Access is disabled at launch; stopping it or quitting the app revokes the token. No tunnel is created.
+### Claude Desktop and Claude Code
+
+Choose **Add to Claude Desktop** or **Add to Claude Code**. This is a one-time step:
+
+- **Claude Desktop:** Cadanraw adds itself to `claude_desktop_config.json` and keeps your other servers. Quit and reopen Claude Desktop.
+- **Claude Code:** Cadanraw runs `claude mcp add` for you at user scope, replacing any older `cadanraw` entry. If it can't find the `claude` command (always on Windows), it copies the command instead; paste it into a terminal or ask Claude Code to run it.
+
+Both use Cadanraw's built-in local (stdio) bridge: the client launches the Cadanraw app binary in Node mode, which connects to the running app. No separate Node install is needed, and the setup keeps working across restarts. If Cadanraw is closed or access is off, the tools still appear but return a message asking you to open the app.
+
+Don't use Claude Desktop's **Settings → Connectors → Add custom connector** for Cadanraw. Custom connectors connect from Anthropic's cloud and need a public HTTPS address, so they can't reach an app on your computer.
+
+### Other MCP apps
+
+Under **Other apps**:
+
+- **Copy local config** copies the same stdio entry for any client that takes `mcpServers` JSON (`command`, `args`, `env`).
+- **Copy HTTP config** copies the direct endpoint and bearer token for clients that support Streamable HTTP with headers. The endpoint listens on `127.0.0.1` and keeps its port and token between launches. **Reset HTTP token** issues a new token; local setups are unaffected.
+
+The URL alone does not grant access, and no tunnel is created.
 
 Always available:
 

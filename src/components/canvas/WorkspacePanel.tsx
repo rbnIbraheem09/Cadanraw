@@ -96,6 +96,43 @@ export default function WorkspacePanel({
   const add = (kind: BlockKind, link = "") => {
     if (api) insertBlock(api, kind, link);
   };
+  const run = async (
+    action: () => ReturnType<typeof window.excali.agent.status>,
+    failure: string,
+  ) => {
+    setError("");
+    try {
+      setAgent(await action());
+    } catch {
+      setError(failure);
+    }
+  };
+  const setupClient = async (client: "claude-desktop" | "claude-code") => {
+    setError("");
+    try {
+      const result = await window.excali.agent.setup(client);
+      if (result.done)
+        toast(
+          client === "claude-desktop"
+            ? "Added. Quit and reopen Claude Desktop to connect."
+            : "Added. Start a new Claude Code session to connect.",
+          "success",
+        );
+      else if (result.command) {
+        await navigator.clipboard.writeText(result.command);
+        toast("Setup command copied. Paste it into a terminal.", "success");
+      }
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message.replace(
+              /^Error invoking remote method '[^']+': (Error: )?/,
+              "",
+            )
+          : "Setup failed",
+      );
+    }
+  };
   const copy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -267,45 +304,78 @@ export default function WorkspacePanel({
               <Radio size={16} /> Agent access
             </h3>
             <p>
-              Let an MCP-compatible agent read, view and (optionally) edit your
-              boards while the app is open.
+              Let Claude or another MCP app read, view and (optionally) edit
+              your boards while Cadanraw is open.
             </p>
             {agent?.enabled ? (
               <>
                 <span className="connection-live">
                   ● {agent.allowWrite ? "Read & edit enabled" : "Read only"}
                 </span>
-                <input aria-label="Agent endpoint" readOnly value={agent.url} />
-                <button
-                  onClick={() =>
-                    copy(
-                      JSON.stringify(
-                        {
-                          mcpServers: {
-                            cadanraw: {
-                              url: agent.url,
-                              headers: {
-                                Authorization: `Bearer ${agent.token}`,
+                <button onClick={() => setupClient("claude-desktop")}>
+                  Add to Claude Desktop
+                </button>
+                <button onClick={() => setupClient("claude-code")}>
+                  Add to Claude Code
+                </button>
+                <details className="connection-more">
+                  <summary>Other apps</summary>
+                  <div>
+                    <button
+                      onClick={() =>
+                        copy(
+                          JSON.stringify(
+                            { mcpServers: { cadanraw: agent.bridge } },
+                            null,
+                            2,
+                          ),
+                        )
+                      }
+                    >
+                      Copy local config
+                    </button>
+                    <button
+                      onClick={() =>
+                        copy(
+                          JSON.stringify(
+                            {
+                              mcpServers: {
+                                cadanraw: {
+                                  type: "http",
+                                  url: agent.url,
+                                  headers: {
+                                    Authorization: `Bearer ${agent.token}`,
+                                  },
+                                },
                               },
                             },
-                          },
-                        },
-                        null,
-                        2,
-                      ),
+                            null,
+                            2,
+                          ),
+                        )
+                      }
+                    >
+                      Copy HTTP config
+                    </button>
+                    <button
+                      onClick={() =>
+                        run(
+                          () => window.excali.agent.resetToken(),
+                          "Could not reset the token",
+                        )
+                      }
+                    >
+                      Reset HTTP token
+                    </button>
+                  </div>
+                </details>
+                <button
+                  onClick={() =>
+                    run(
+                      () => window.excali.agent.stop(),
+                      "Could not stop agent access",
                     )
                   }
-                >
-                  Copy MCP configuration
-                </button>
-                <button
-                  onClick={async () => {
-                    try {
-                      setAgent(await window.excali.agent.stop());
-                    } catch {
-                      setError("Could not stop agent access");
-                    }
-                  }}
                 >
                   Turn off agent access
                 </button>
@@ -321,21 +391,20 @@ export default function WorkspacePanel({
                   Allow agents to edit boards
                 </label>
                 <button
-                  onClick={async () => {
-                    try {
-                      setAgent(await window.excali.agent.start(write));
-                    } catch {
-                      setError("Could not start the local agent connection");
-                    }
-                  }}
+                  onClick={() =>
+                    run(
+                      () => window.excali.agent.start(write),
+                      "Could not start the local agent connection",
+                    )
+                  }
                 >
                   Enable agent access
                 </button>
               </>
             )}
             <p className="panel-hint">
-              Local connections only. Turning access off revokes the copied
-              token.
+              Set up once. Access stays on between launches until you turn it
+              off, and only apps on this computer can connect.
             </p>
           </section>
         </>

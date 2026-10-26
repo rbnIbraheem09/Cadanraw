@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import type { FetchedImage } from "./ipc-contract";
 import { createAgentServer } from "./services/agent-server";
+import { createAgentSetup } from "./services/agent-setup";
 const pendingAgentCalls = new Map<
   string,
   { resolve: (value: unknown) => void; reject: (error: Error) => void }
@@ -212,9 +213,48 @@ interface WindowBounds {
   x?: number;
   y?: number;
 }
-const store = new Store<{ windowBounds: WindowBounds }>({
-  defaults: { windowBounds: { width: 1280, height: 800 } },
+interface AgentSettings {
+  enabled: boolean;
+  allowWrite: boolean;
+  token?: string;
+  port?: number;
+}
+const store = new Store<{ windowBounds: WindowBounds; agent: AgentSettings }>({
+  defaults: {
+    windowBounds: { width: 1280, height: 800 },
+    agent: { enabled: false, allowWrite: false },
+  },
 });
+
+let agentSetup: ReturnType<typeof createAgentSetup> | null = null;
+
+/** Start agent access with the saved token and port, and remember it for next launch. */
+async function startAgent(allowWrite: boolean, newToken = false) {
+  const saved = store.get("agent");
+  const info = await agentServer.start(allowWrite, {
+    token: newToken ? undefined : saved.token,
+    port: saved.port,
+  });
+  store.set("agent", {
+    enabled: true,
+    allowWrite,
+    token: info.token,
+    port: Number(new URL(info.url).port),
+  });
+  agentSetup?.publish(info);
+  return agentStatus();
+}
+
+async function stopAgent() {
+  store.set("agent", { ...store.get("agent"), enabled: false });
+  agentSetup?.publish(null);
+  await agentServer.stop();
+  return agentStatus();
+}
+
+function agentStatus() {
+  return { ...agentServer.status(), bridge: agentSetup?.entry };
+}
 
 const MIN_WIDTH = 880;
 const MIN_HEIGHT = 600;
@@ -450,11 +490,45 @@ app.whenReady().then(() => {
   registerLibraryHandlers(ipcMain, createLibraryService({ dataDir }));
   registerDialogHandlers(ipcMain, () => mainWindow);
 
-  ipcMain.handle("agent:status", () => agentServer.status());
+  agentSetup = createAgentSetup({
+    userData: dataDir,
+    appData: app.getPath("appData"),
+    home: app.getPath("home"),
+    execPath: process.execPath,
+    bridgePath: path.join(__dirname, "mcp-bridge.js"),
+    platform: process.platform,
+  });
+  agentSetup.publish(null); // clear a file left by a crash
+  const agentPrefs = store.get("agent");
+  if (agentPrefs.enabled)
+    startAgent(agentPrefs.allowWrite).catch((e) =>
+      console.error("Could not restore agent access", e),
+    );
+  ipcMain.handle("agent:status", () => agentStatus());
   ipcMain.handle("agent:start", (_e, allowWrite: boolean) =>
-    agentServer.start(allowWrite === true),
+    startAgent(allowWrite === true),
   );
-  ipcMain.handle("agent:stop", () => agentServer.stop());
+  ipcMain.handle("agent:stop", () => stopAgent());
+  ipcMain.handle("agent:reset-token", () =>
+    startAgent(agentServer.status().allowWrite, true),
+  );
+  // Returns a terminal command to copy when the CLI can't be run for the user.
+  ipcMain.handle(
+    "agent:setup",
+    async (_e, client: "claude-desktop" | "claude-code") => {
+      if (!agentSetup) throw new Error("Not ready");
+      if (client === "claude-desktop") {
+        agentSetup.addToClaudeDesktop();
+        return { done: true };
+      }
+      try {
+        await agentSetup.addToClaudeCode();
+        return { done: true };
+      } catch {
+        return { done: false, command: agentSetup.claudeCodeCommand };
+      }
+    },
+  );
   ipcMain.on("agent:response", (event, response) => {
     if (event.sender !== mainWindow?.webContents) return;
     const pending = pendingAgentCalls.get(response.id);
@@ -575,6 +649,7 @@ app.whenReady().then(() => {
 app.on("before-quit", () => {
   isQuitting = true;
   persistBounds();
+  agentSetup?.publish(null);
   void agentServer.stop();
   db?.close(); // checkpoints WAL and releases the file
   db = null;

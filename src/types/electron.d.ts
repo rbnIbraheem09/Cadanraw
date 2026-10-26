@@ -19,11 +19,22 @@ declare global {
           url: string;
           token: string;
           allowWrite: boolean;
+          /** Local (stdio) MCP config entry; works across restarts. */
+          bridge?: {
+            command: string;
+            args: string[];
+            env: Record<string, string>;
+          };
         }>;
         start(
           allowWrite: boolean,
         ): ReturnType<Window["excali"]["agent"]["status"]>;
         stop(): ReturnType<Window["excali"]["agent"]["status"]>;
+        resetToken(): ReturnType<Window["excali"]["agent"]["status"]>;
+        /** Adds Cadanraw to a local client; returns a command to copy if it can't. */
+        setup(
+          client: "claude-desktop" | "claude-code",
+        ): Promise<{ done: boolean; command?: string }>;
         onRequest(
           cb: (request: {
             id: string;

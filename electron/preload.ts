@@ -51,6 +51,9 @@ const api = {
     start: (allowWrite: boolean) =>
       ipcRenderer.invoke("agent:start", allowWrite),
     stop: () => ipcRenderer.invoke("agent:stop"),
+    resetToken: () => ipcRenderer.invoke("agent:reset-token"),
+    setup: (client: "claude-desktop" | "claude-code") =>
+      ipcRenderer.invoke("agent:setup", client),
     onRequest: (
       cb: (request: {
         id: string;
