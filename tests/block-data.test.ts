@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   parseBlockData,
+  withBlockIds,
   moveKanbanCard,
   MAX_ATTACHMENT_BYTES,
 } from "../src/lib/block-data";
@@ -98,5 +99,24 @@ describe("portable rich block data", () => {
     expect(moveKanbanCard(moved, "a", "done")).toBe(moved);
     expect(moveKanbanCard(moved, "missing", "done")).toBe(moved);
     expect(moveKanbanCard(moved, "b", "deleted-column")).toBe(moved);
+  });
+  it("accepts agent-friendly list content and keeps existing IDs", () => {
+    const data = parseBlockData({
+      kind: "kanban",
+      ...withBlockIds({
+        kind: "note",
+        items: ["Shot 1", { id: "keep", text: "Shot 2", done: true }],
+        columns: [{ title: "To do", cards: ["Rough cut"] }, "Done"],
+      }),
+    })!;
+    expect(data.kind).toBe("kanban");
+    expect(data.items.map((i) => [i.text, i.done])).toEqual([
+      ["Shot 1", false],
+      ["Shot 2", true],
+    ]);
+    expect(data.items[1].id).toBe("keep");
+    expect(data.columns.map((c) => c.title)).toEqual(["To do", "Done"]);
+    expect(data.columns[0].cards[0]).toMatchObject({ text: "Rough cut" });
+    expect(data.columns[0].cards[0].id).toEqual(expect.any(String));
   });
 });

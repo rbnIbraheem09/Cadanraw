@@ -59,17 +59,27 @@ Replace the domain with your own and point DNS at the server. Restrict direct ac
 
 ## Connect an agent over MCP
 
-In **Connect → Agent access**, optionally choose **Allow agents to add content**, then enable access and copy the MCP configuration into a client that supports HTTP MCP endpoints and Authorization headers.
+In **Connect → Agent access**, optionally choose **Allow agents to edit boards**, then enable access and copy the MCP configuration into a client that supports HTTP MCP endpoints and Authorization headers.
 
 The endpoint listens on an ephemeral port on `127.0.0.1` and requires a random bearer token. The URL alone does not grant access. Access is disabled at launch; stopping it or quitting the app revokes the token. No tunnel is created.
 
-Available tools:
+Always available:
 
-| Tool                 | Behavior                                                                                                      |
-| -------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `list_canvases`      | Lists canvas IDs and metadata                                                                                 |
-| `read_active_canvas` | Reads the active live scene, including unsaved edits, files and block data                                    |
-| `add_elements`       | Appends up to 200 shape/text/arrow skeletons when editing is allowed                                          |
-| `add_block`          | Adds a note, checklist, table, calendar, link, Kanban, attachment or local-board card when editing is allowed |
+| Tool            | Behavior                                                                                                                                               |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `list_canvases` | Lists canvases, folders and the open canvas ID                                                                                                         |
+| `read_canvas`   | Reads a canvas (the open one by default, including unsaved edits, visible bounds and selection). Block data is included; embedded files are summarized |
+| `screenshot`    | Returns an image of the canvas as it looks in the app, rich blocks included. Zooms to fit everything or chosen IDs, or keeps the current view          |
 
-Reads and writes go through the live editor. Writes are additive, undoable and enter the normal autosave flow. Open an editable canvas first; version previews reject agent operations. This implements stateless JSON-response Streamable HTTP with the 2025-03-26 protocol and no subscriptions. The app doesn't offer chat messaging between agents.
+With **Allow agents to edit boards**:
+
+| Tool              | Behavior                                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `manage_canvas`   | Creates (and opens), opens, renames or deletes a canvas. Deleted canvases go to the system trash                          |
+| `add_elements`    | Appends up to 200 shape/text/arrow skeletons. Agent-chosen IDs are kept so later calls can reference them                 |
+| `add_image`       | Adds an image from an http(s) URL, a `data:image` URL or an absolute local path (png, jpg, gif, webp, svg; up to 20 MB)   |
+| `add_block`       | Adds a note, checklist, table, calendar, link, Kanban, attachment or board card, with optional content, position and size |
+| `update_elements` | Moves, resizes, restyles or re-texts elements, and edits block content (titles, items, rows, columns, events, colors)     |
+| `delete_elements` | Deletes elements and their labels                                                                                         |
+
+Element tools act on the open canvas. Writes go through the live editor, so the user can undo them, and they enter the normal autosave flow. Version previews reject element operations. Screenshots need the Cadanraw window to be open; the editor toolbar is hidden for the instant of capture. Local image paths are read only when they decode as images. This implements stateless JSON-response Streamable HTTP with the 2025-03-26 protocol and no subscriptions. The app doesn't offer chat messaging between agents.

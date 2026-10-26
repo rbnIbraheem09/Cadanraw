@@ -3,7 +3,6 @@ import {
   Excalidraw,
   loadFromBlob,
   hashElementsVersion,
-  viewportCoordsToSceneCoords,
 } from "@excalidraw/excalidraw";
 import type {
   ExcalidrawImperativeAPI,
@@ -12,6 +11,7 @@ import type {
 import "@excalidraw/excalidraw/index.css";
 
 import { syncDotGrid } from "../../lib/canvas-surface";
+import { embedImageIntoCanvas } from "../../lib/images";
 import CanvasBlock from "../blocks/CanvasBlock";
 import {
   blockData,
@@ -34,99 +34,6 @@ function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
-async function sha1Hex(text: string): Promise<string> {
-  const data = new TextEncoder().encode(text);
-  const buf = await crypto.subtle.digest("SHA-1", data);
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-function loadImageDimensions(src: string): Promise<{ w: number; h: number }> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () =>
-      resolve({ w: img.naturalWidth || 400, h: img.naturalHeight || 300 });
-    img.onerror = () => resolve({ w: 400, h: 300 });
-    img.src = src;
-  });
-}
-
-async function embedImageIntoCanvas(
-  api: ExcalidrawImperativeAPI,
-  dataURL: string,
-  mimeType: string,
-  link: string | null,
-) {
-  const fileId = await sha1Hex(dataURL);
-  const { w, h } = await loadImageDimensions(dataURL);
-
-  // Cap at 800px in any dimension, preserve aspect ratio.
-  const maxDim = 800;
-  const scale = Math.min(1, maxDim / Math.max(w, h, 1));
-  const elemW = Math.max(1, Math.round(w * scale));
-  const elemH = Math.max(1, Math.round(h * scale));
-
-  // Convert viewport center to scene (canvas) coordinates.
-  const appState = api.getAppState();
-  const center = viewportCoordsToSceneCoords(
-    {
-      clientX: appState.offsetLeft + appState.width / 2,
-      clientY: appState.offsetTop + appState.height / 2,
-    },
-    appState,
-  );
-  const sceneX = center.x - elemW / 2;
-  const sceneY = center.y - elemH / 2;
-
-  // Register the file in Excalidraw's binary-file cache.
-  (api.addFiles as (files: unknown[]) => void)([
-    {
-      id: fileId,
-      dataURL,
-      mimeType,
-      created: Date.now(),
-    },
-  ]);
-
-  const existing = api.getSceneElements();
-  (api.updateScene as (data: { elements: unknown[] }) => void)({
-    elements: [
-      ...existing,
-      {
-        type: "image",
-        id: crypto.randomUUID(),
-        fileId,
-        x: sceneX,
-        y: sceneY,
-        width: elemW,
-        height: elemH,
-        angle: 0,
-        strokeColor: "transparent",
-        backgroundColor: "transparent",
-        fillStyle: "solid",
-        strokeWidth: 1,
-        strokeStyle: "solid",
-        roughness: 0,
-        opacity: 100,
-        groupIds: [],
-        frameId: null,
-        roundness: null,
-        seed: Math.floor(Math.random() * 2 ** 31),
-        version: 1,
-        versionNonce: Math.floor(Math.random() * 2 ** 31),
-        isDeleted: false,
-        boundElements: null,
-        updated: Date.now(),
-        link,
-        locked: false,
-        status: "saved",
-        scale: [1, 1],
-      },
-    ],
-  });
-}
-
 async function handleUrlPaste(
   url: string,
   api: ExcalidrawImperativeAPI,
@@ -139,8 +46,12 @@ async function handleUrlPaste(
   }
   const img = await window.excali.fetchImage(url).catch(() => null);
   if (!alive()) return;
-  if (img) await embedImageIntoCanvas(api, img.dataURL, img.mimeType, url);
-  else insertBlock(api, "link", url);
+  try {
+    if (!img) throw new Error("Not an image");
+    await embedImageIntoCanvas(api, img.dataURL, img.mimeType, url);
+  } catch {
+    insertBlock(api, "link", url);
+  }
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────

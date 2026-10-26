@@ -11,36 +11,180 @@ import {
 } from "electron";
 import * as path from "path";
 import { randomUUID } from "node:crypto";
+import { readFile, stat } from "node:fs/promises";
+import type { FetchedImage } from "./ipc-contract";
 import { createAgentServer } from "./services/agent-server";
 const pendingAgentCalls = new Map<
   string,
   { resolve: (value: unknown) => void; reject: (error: Error) => void }
 >();
-const agentServer = createAgentServer(
-  (method, args) =>
-    new Promise((resolve, reject) => {
-      if (!mainWindow || mainWindow.isDestroyed()) {
-        reject(new Error("App window unavailable"));
-        return;
+function askRenderer(method: string, args: Record<string, unknown>) {
+  return new Promise<unknown>((resolve, reject) => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      reject(new Error("App window unavailable"));
+      return;
+    }
+    const id = randomUUID();
+    const timer = setTimeout(() => {
+      pendingAgentCalls.delete(id);
+      reject(new Error("Canvas did not respond"));
+    }, 10000);
+    pendingAgentCalls.set(id, {
+      resolve: (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      reject: (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    });
+    mainWindow.webContents.send("agent:request", { id, method, args });
+  });
+}
+
+const IMAGE_TYPES: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  svg: "image/svg+xml",
+};
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+
+/** Resolve an agent image source to a data URL. The renderer then verifies it decodes. */
+async function loadAgentImage(source: string): Promise<FetchedImage> {
+  if (/^data:image\/(png|jpeg|gif|webp|svg\+xml);base64,/.test(source))
+    return { dataURL: source, mimeType: source.slice(5, source.indexOf(";")) };
+  if (/^https?:\/\//i.test(source)) {
+    const image = await fetchImage(source);
+    if (!image) throw new Error("URL did not return an image");
+    return image;
+  }
+  if (!path.isAbsolute(source))
+    throw new Error("Use an http(s) URL, a data:image URL or an absolute path");
+  const mimeType = IMAGE_TYPES[path.extname(source).slice(1).toLowerCase()];
+  if (!mimeType) throw new Error("Unsupported image type");
+  const info = await stat(source);
+  if (!info.isFile() || info.size > MAX_IMAGE_BYTES)
+    throw new Error("Image must be a file of at most 20 MB");
+  const data = await readFile(source);
+  return {
+    dataURL: `data:${mimeType};base64,${data.toString("base64")}`,
+    mimeType,
+  };
+}
+
+/** Grab the canvas area the renderer reports, scaled for agent viewing. */
+async function captureCanvas(
+  view: { rect: { x: number; y: number; width: number; height: number } },
+  maxSize: unknown,
+) {
+  if (!mainWindow || mainWindow.isDestroyed())
+    throw new Error("App window unavailable");
+  const zoom = mainWindow.webContents.getZoomFactor();
+  const r = view.rect;
+  const image = await mainWindow.webContents.capturePage(
+    {
+      x: Math.round(r.x * zoom),
+      y: Math.round(r.y * zoom),
+      width: Math.round(r.width * zoom),
+      height: Math.round(r.height * zoom),
+    },
+    { stayHidden: true },
+  );
+  if (image.isEmpty())
+    throw new Error(
+      "Could not capture the canvas. Is the Cadanraw window open?",
+    );
+  const size = image.getSize();
+  const max = Math.min(4096, Math.max(256, Number(maxSize) || 1568));
+  const scale = Math.min(1, max / Math.max(size.width, size.height));
+  const out =
+    scale < 1
+      ? image.resize({
+          width: Math.round(size.width * scale),
+          height: Math.round(size.height * scale),
+          quality: "good",
+        })
+      : image;
+  return {
+    mcpContent: [
+      {
+        type: "image",
+        data: out.toPNG().toString("base64"),
+        mimeType: "image/png",
+      },
+      { type: "text", text: JSON.stringify({ ...view, rect: undefined }) },
+    ],
+  };
+}
+
+const agentServer = createAgentServer(async (method, args) => {
+  if (method === "add_image")
+    return askRenderer(method, {
+      ...args,
+      source: undefined,
+      image: await loadAgentImage(String(args.source ?? "")),
+    });
+  if (method === "screenshot") {
+    const view = await askRenderer(method, args);
+    try {
+      return await captureCanvas(
+        view as Parameters<typeof captureCanvas>[0],
+        args.maxSize,
+      );
+    } finally {
+      void askRenderer("screenshot_done", {}).catch(() => {});
+    }
+  }
+  return askRenderer(method, args);
+}, app.getVersion());
+
+/** Fetch an http(s) image from the main process (no renderer CORS). */
+async function fetchImage(url: string): Promise<FetchedImage | null> {
+  try {
+    const parsed = new URL(url);
+    if (!["http:", "https:"].includes(parsed.protocol)) return null;
+
+    const res = await net.fetch(url, {
+      headers: { "User-Agent": "Cadanraw/1.0" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+
+    const contentType = (res.headers.get("content-type") ?? "image/jpeg")
+      .split(";")[0]
+      .trim();
+    if (!contentType.startsWith("image/")) return null;
+
+    if (Number(res.headers.get("content-length")) > MAX_IMAGE_BYTES)
+      return null;
+    const reader = res.body?.getReader();
+    if (!reader) return null;
+    const chunks: Buffer[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        size += chunk.value.byteLength;
+        if (size > MAX_IMAGE_BYTES) return null;
+        chunks.push(Buffer.from(chunk.value));
       }
-      const id = randomUUID();
-      const timer = setTimeout(() => {
-        pendingAgentCalls.delete(id);
-        reject(new Error("Canvas did not respond"));
-      }, 10000);
-      pendingAgentCalls.set(id, {
-        resolve: (value) => {
-          clearTimeout(timer);
-          resolve(value);
-        },
-        reject: (error) => {
-          clearTimeout(timer);
-          reject(error);
-        },
-      });
-      mainWindow.webContents.send("agent:request", { id, method, args });
-    }),
-);
+    } finally {
+      await reader.cancel();
+    }
+    const buffer = Buffer.concat(chunks);
+    return {
+      dataURL: `data:${contentType};base64,${buffer.toString("base64")}`,
+      mimeType: contentType,
+    };
+  } catch {
+    return null;
+  }
+}
 
 // Force sRGB color profile so pasted screenshots don't appear brighter due to
 // Display P3 → sRGB color space mismatches on wide-gamut macOS displays.
@@ -329,48 +473,7 @@ app.whenReady().then(() => {
 
   // Fetch an image URL from the main process (bypasses renderer CORS restrictions).
   // Returns { dataURL, mimeType } if the URL resolves to an image, else null.
-  ipcMain.handle("app:fetch-image", async (_e, url: string) => {
-    try {
-      const parsed = new URL(url);
-      if (!["http:", "https:"].includes(parsed.protocol)) return null;
-
-      const res = await net.fetch(url, {
-        headers: { "User-Agent": "Cadanraw/1.0" },
-        signal: AbortSignal.timeout(10000),
-      });
-      if (!res.ok) return null;
-
-      const contentType = (res.headers.get("content-type") ?? "image/jpeg")
-        .split(";")[0]
-        .trim();
-      if (!contentType.startsWith("image/")) return null;
-
-      if (Number(res.headers.get("content-length")) > 20 * 1024 * 1024)
-        return null;
-      const reader = res.body?.getReader();
-      if (!reader) return null;
-      const chunks: Buffer[] = [];
-      let size = 0;
-      try {
-        while (true) {
-          const chunk = await reader.read();
-          if (chunk.done) break;
-          size += chunk.value.byteLength;
-          if (size > 20 * 1024 * 1024) return null;
-          chunks.push(Buffer.from(chunk.value));
-        }
-      } finally {
-        await reader.cancel();
-      }
-      const buffer = Buffer.concat(chunks);
-      return {
-        dataURL: `data:${contentType};base64,${buffer.toString("base64")}`,
-        mimeType: contentType,
-      };
-    } catch {
-      return null;
-    }
-  });
+  ipcMain.handle("app:fetch-image", (_e, url: string) => fetchImage(url));
 
   ipcMain.handle("app:link-metadata", (_e, url: string) =>
     getLinkMetadata(url, net.fetch),

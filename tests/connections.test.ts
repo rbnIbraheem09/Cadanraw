@@ -155,7 +155,13 @@ describe("agent MCP", () => {
     const calls: string[] = [];
     const agent = createAgentServer(async (name) => {
       calls.push(name);
-      return { ok: true };
+      return name === "screenshot"
+        ? {
+            mcpContent: [
+              { type: "image", data: "AA==", mimeType: "image/png" },
+            ],
+          }
+        : { ok: true };
     });
     try {
       let info = await agent.start(false);
@@ -184,16 +190,23 @@ describe("agent MCP", () => {
         (await rpc("tools/list")).result.tools.map(
           (t: { name: string }) => t.name,
         ),
-      ).toEqual(["list_canvases", "read_active_canvas"]);
+      ).toEqual(["list_canvases", "read_canvas", "screenshot"]);
+      for (const name of ["add_block", "manage_canvas", "delete_elements"])
+        expect((await rpc("tools/call", { name })).result.isError).toBe(true);
+      await rpc("tools/call", { name: "read_canvas" });
+      expect(calls).toEqual(["read_canvas"]);
       expect(
-        (await rpc("tools/call", { name: "add_block" })).result.isError,
-      ).toBe(true);
-      await rpc("tools/call", { name: "read_active_canvas" });
-      expect(calls).toEqual(["read_active_canvas"]);
+        (await rpc("tools/call", { name: "screenshot" })).result.content[0],
+      ).toEqual({ type: "image", data: "AA==", mimeType: "image/png" });
       const oldToken = info.token;
       info = await agent.start(true);
       expect(info.token).not.toBe(oldToken);
-      expect((await rpc("tools/list")).result.tools).toHaveLength(4);
+      const tools = (await rpc("tools/list")).result.tools;
+      expect(tools).toHaveLength(9);
+      expect(
+        tools.find((t: { name: string }) => t.name === "delete_elements")
+          .annotations,
+      ).toEqual({ readOnlyHint: false, destructiveHint: true });
       await rpc("tools/call", {
         name: "add_block",
         arguments: { kind: "note" },

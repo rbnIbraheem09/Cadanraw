@@ -266,7 +266,10 @@ export default function WorkspacePanel({
             <h3>
               <Radio size={16} /> Agent access
             </h3>
-            <p>Let an MCP-compatible agent read this app while it is open.</p>
+            <p>
+              Let an MCP-compatible agent read, view and (optionally) edit your
+              boards while the app is open.
+            </p>
             {agent?.enabled ? (
               <>
                 <span className="connection-live">
@@ -315,7 +318,7 @@ export default function WorkspacePanel({
                     checked={write}
                     onChange={(e) => setWrite(e.target.checked)}
                   />{" "}
-                  Allow agents to add content
+                  Allow agents to edit boards
                 </label>
                 <button
                   onClick={async () => {

@@ -2012,3 +2012,8 @@
 .excalidraw .canvas-block .task-drag-handle:active {
   cursor: grabbing;
 }
+
+/* Hide Excalidraw's toolbars while an agent screenshot is captured. */
+.agent-capture .excalidraw .layer-ui__wrapper {
+  visibility: hidden;
+}

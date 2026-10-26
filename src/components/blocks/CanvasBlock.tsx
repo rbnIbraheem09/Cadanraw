@@ -8,6 +8,7 @@ export type MetadataResolver = (
 import { useEffect, useState, useRef } from "react";
 import type { BlockData } from "../../lib/blocks";
 import { youtubeId } from "../../lib/blocks";
+import { forwardBlockWheel } from "../../lib/canvas-surface";
 
 export default function CanvasBlock({
   data,
@@ -82,12 +83,18 @@ export default function CanvasBlock({
   const edit = (patch: Partial<BlockData>) => {
     if (!readOnly) onChange(patch);
   };
+  const articleRef = useRef<HTMLElement | null>(null);
+  useEffect(
+    () =>
+      articleRef.current ? forwardBlockWheel(articleRef.current) : undefined,
+    [],
+  );
   return (
     <article
+      ref={articleRef}
       className={`canvas-block block-${data.kind} tone-${data.color}`}
       onPointerDown={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
-      onWheel={(e) => e.stopPropagation()}
     >
       <div className="block-heading">
         <BlockField

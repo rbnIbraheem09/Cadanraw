@@ -115,6 +115,32 @@ export interface BlockData {
   boardId: string;
   attachment?: Attachment;
 }
+/** Accept agent-friendly content: plain-string list entries, and missing IDs filled in. */
+export function withBlockIds(raw: Record<string, any>): Partial<BlockData> {
+  const id = () => crypto.randomUUID();
+  const out = { ...raw };
+  delete out.kind; // a block's kind is fixed once created
+  if (Array.isArray(raw.items))
+    out.items = raw.items.map((i: any) =>
+      typeof i === "string"
+        ? { id: id(), text: i, done: false }
+        : { id: id(), ...i },
+    );
+  if (Array.isArray(raw.columns))
+    out.columns = raw.columns.map((c: any) => {
+      const col = typeof c === "string" ? { title: c } : c;
+      return {
+        id: id(),
+        ...col,
+        cards: (Array.isArray(col?.cards) ? col.cards : []).map((card: any) =>
+          typeof card === "string"
+            ? { id: id(), text: card }
+            : { id: id(), ...card },
+        ),
+      };
+    });
+  return out;
+}
 export function parseBlockData(raw: any): BlockData | undefined {
   if (!raw || typeof raw !== "object" || !BLOCK_KINDS.includes(raw.kind))
     return undefined;

@@ -12,6 +12,7 @@ import type {
 } from "@excalidraw/excalidraw/element/types";
 
 import { parseBlockData } from "./block-data";
+import type { Placement } from "./images";
 export type { BlockKind, BlockData } from "./block-data";
 import type { BlockKind, BlockData } from "./block-data";
 export function youtubeId(raw: string): string | null {
@@ -38,10 +39,12 @@ export function insertBlock(
   kind: BlockKind,
   url = "",
   initial: Partial<BlockData> = {},
-) {
+  place: Placement = {},
+): string {
   const state = api.getAppState();
   const width =
-    kind === "kanban"
+    place.width ??
+    (kind === "kanban"
       ? 840
       : kind === "calendar"
         ? 560
@@ -49,9 +52,10 @@ export function insertBlock(
           ? 540
           : kind === "checklist"
             ? 480
-            : 360;
+            : 360);
   const height =
-    kind === "kanban"
+    place.height ??
+    (kind === "kanban"
       ? 420
       : kind === "calendar"
         ? 480
@@ -59,7 +63,7 @@ export function insertBlock(
           ? 300
           : kind === "link" || kind === "file"
             ? 280
-            : 250;
+            : 250);
   const center = viewportCoordsToSceneCoords(
     {
       clientX: state.offsetLeft + state.width / 2,
@@ -67,8 +71,7 @@ export function insertBlock(
     },
     state,
   );
-  const data: BlockData = {
-    kind,
+  const data = parseBlockData({
     createdAt: Date.now(),
     columns: ["To do", "In progress", "Done"].map((title) => ({
       id: crypto.randomUUID(),
@@ -98,14 +101,16 @@ export function insertBlock(
     url,
     color: kind === "note" ? "slate" : "charcoal",
     ...initial,
-  };
+    kind,
+  })!;
   // A native embeddable remains movable, resizable, undoable and serializable.
-  let x = center.x - width / 2;
-  const y = center.y - height / 2;
+  let x = place.x ?? center.x - width / 2;
+  const y = place.y ?? center.y - height / 2;
   const existing = api.getSceneElements();
   // Keep the new card beside existing content instead of hiding it in a stack.
   for (
     let attempt = 0;
+    place.x === undefined &&
     attempt < 50 &&
     existing.some(
       (e) =>
@@ -151,8 +156,9 @@ export function insertBlock(
     captureUpdate: CaptureUpdateAction.IMMEDIATELY,
   });
   if (
-    x !== center.x - width / 2 ||
-    width * state.zoom.value > state.width * 0.85
+    place.x === undefined &&
+    (x !== center.x - width / 2 ||
+      width * state.zoom.value > state.width * 0.85)
   )
     api.scrollToContent(element, {
       fitToViewport: true,
@@ -160,6 +166,7 @@ export function insertBlock(
       viewportZoomFactor: 0.85,
       animate: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
     });
+  return element.id;
 }
 export function updateBlock(
   api: ExcalidrawImperativeAPI,

@@ -1,6 +1,141 @@
 import { createServer, type Server } from "node:http";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 
+const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
+  type: "object",
+  properties,
+  ...(required.length ? { required } : {}),
+});
+const num = { type: "number" };
+const ids = { type: "array", items: { type: "string" }, maxItems: 500 };
+const place = {
+  x: num,
+  y: num,
+  width: { ...num, description: "Scene units; omit for the default size" },
+  height: num,
+};
+const BLOCK_DATA = {
+  type: "object",
+  description:
+    "Block content (all optional): title; text (note); items [{text,done}|string] (checklist); rows string[][] (table); month 'YYYY-MM' and events {'YYYY-MM-DD': text} (calendar); columns [{title,cards:[string]}] (kanban); url (link); boardId (board, from list_canvases); color slate|charcoal|sage|sand|rose|peach|lavender. Lists replace the existing list.",
+};
+
+/** MCP tools. `write` tools exist only when the user allowed editing. */
+export const TOOLS: {
+  name: string;
+  description: string;
+  inputSchema: object;
+  write?: boolean;
+  destructive?: boolean;
+}[] = [
+  {
+    name: "list_canvases",
+    description: "List canvases (IDs, names, folders) and the open canvas ID.",
+    inputSchema: obj({}),
+  },
+  {
+    name: "read_canvas",
+    description:
+      "Read a canvas's elements (including rich-block data in customData.cadanrawBlock) and files. Defaults to the open canvas, which includes unsaved edits, the visible scene bounds [x1,y1,x2,y2] and the user's selection. Embedded file data is summarized.",
+    inputSchema: obj({ id: { type: "string" } }),
+  },
+  {
+    name: "screenshot",
+    description:
+      "Capture what the canvas looks like, rich blocks included. By default zooms to fit everything (or `ids`) first; fit=false keeps the current view. Returns an image plus the scene bounds it shows.",
+    inputSchema: obj({
+      ids,
+      fit: { type: "boolean" },
+      maxSize: {
+        ...num,
+        description: "Longest image side in px (default 1568)",
+      },
+    }),
+  },
+  {
+    name: "manage_canvas",
+    description:
+      "Create (and open), open, rename or delete a canvas. Deleted canvases go to the system trash.",
+    inputSchema: obj(
+      {
+        action: { enum: ["create", "open", "rename", "delete"] },
+        id: { type: "string" },
+        name: { type: "string" },
+      },
+      ["action"],
+    ),
+    write: true,
+    destructive: true,
+  },
+  {
+    name: "add_elements",
+    description:
+      "Append Excalidraw element skeletons (rectangle, ellipse, diamond, text, line, arrow) to the open canvas. Returns the created IDs.",
+    inputSchema: obj(
+      { elements: { type: "array", items: { type: "object" }, maxItems: 200 } },
+      ["elements"],
+    ),
+    write: true,
+  },
+  {
+    name: "add_image",
+    description:
+      "Add an image from an http(s) URL, a data:image URL or a local file path (png, jpg, gif, webp, svg; max 20 MB). Defaults to the view center, at most 800 units wide.",
+    inputSchema: obj({ source: { type: "string" }, ...place }, ["source"]),
+    write: true,
+  },
+  {
+    name: "add_block",
+    description:
+      "Add a Cadanraw block (note, checklist, table, calendar, link, kanban, file, board) with optional content and placement. Returns its ID.",
+    inputSchema: obj(
+      {
+        kind: {
+          enum: [
+            "note",
+            "checklist",
+            "table",
+            "calendar",
+            "link",
+            "kanban",
+            "file",
+            "board",
+          ],
+        },
+        url: { type: "string" },
+        data: BLOCK_DATA,
+        ...place,
+      },
+      ["kind"],
+    ),
+    write: true,
+  },
+  {
+    name: "update_elements",
+    description:
+      "Move, resize or restyle elements by ID, edit text, or patch rich-block content via `block`. Editable: x, y, width, height, angle, text, fontSize, fontFamily, textAlign, verticalAlign, strokeColor, backgroundColor, fillStyle, strokeWidth, strokeStyle, roughness, opacity.",
+    inputSchema: obj(
+      {
+        updates: {
+          type: "array",
+          maxItems: 200,
+          items: obj({ id: { type: "string" }, block: BLOCK_DATA }, ["id"]),
+        },
+      },
+      ["updates"],
+    ),
+    write: true,
+  },
+  {
+    name: "delete_elements",
+    description:
+      "Delete elements by ID from the open canvas (their labels go too). The user can undo.",
+    inputSchema: obj({ ids }, ["ids"]),
+    write: true,
+    destructive: true,
+  },
+];
+
 export interface AgentConnection {
   enabled: boolean;
   url: string;
@@ -9,6 +144,7 @@ export interface AgentConnection {
 }
 export function createAgentServer(
   run: (method: string, args: Record<string, unknown>) => Promise<unknown>,
+  version = "0.0.0",
 ) {
   let server: Server | null = null;
   let info: AgentConnection = {
@@ -74,7 +210,7 @@ export function createAgentServer(
           let body = "";
           for await (const chunk of req) {
             body += chunk;
-            if (Buffer.byteLength(body) > 4 * 1024 * 1024) {
+            if (Buffer.byteLength(body) > 16 * 1024 * 1024) {
               send(413);
               return;
             }
@@ -93,9 +229,9 @@ export function createAgentServer(
               result = {
                 protocolVersion: "2025-03-26",
                 capabilities: { tools: {} },
-                serverInfo: { name: "cadanraw", version: "0.2.0" },
+                serverInfo: { name: "cadanraw", version },
                 instructions:
-                  "Access the currently open Cadanraw app. Writes require the user to enable editing in the app.",
+                  "Read and edit boards in the open Cadanraw app. Element tools act on the open canvas; use manage_canvas to create or switch canvases. Coordinates are scene units. Edits are undoable by the user. Writes require the user to enable editing in the app.",
               };
               break;
             case "ping":
@@ -103,84 +239,21 @@ export function createAgentServer(
               break;
             case "tools/list":
               result = {
-                tools: [
-                  {
-                    name: "list_canvases",
-                    description: "List local canvas names and IDs.",
-                    inputSchema: { type: "object", properties: {} },
-                    annotations: { readOnlyHint: true },
-                  },
-                  {
-                    name: "read_active_canvas",
-                    description:
-                      "Read live elements, app state and files from the active canvas, including unsaved changes and rich blocks.",
-                    inputSchema: { type: "object", properties: {} },
-                    annotations: { readOnlyHint: true },
-                  },
-                  ...(info.allowWrite
-                    ? [
-                        {
-                          name: "add_elements",
-                          description:
-                            "Append Excalidraw element skeletons to the active canvas. Existing elements are preserved.",
-                          inputSchema: {
-                            type: "object",
-                            properties: {
-                              elements: {
-                                type: "array",
-                                items: { type: "object" },
-                                maxItems: 200,
-                              },
-                            },
-                            required: ["elements"],
-                          },
-                          annotations: {
-                            readOnlyHint: false,
-                            destructiveHint: false,
-                          },
-                        },
-                        {
-                          name: "add_block",
-                          description:
-                            "Add a note, checklist, table, calendar, link, kanban, file or board block at the center of the active canvas.",
-                          inputSchema: {
-                            type: "object",
-                            properties: {
-                              kind: {
-                                enum: [
-                                  "kanban",
-                                  "file",
-                                  "board",
-                                  "note",
-                                  "checklist",
-                                  "table",
-                                  "calendar",
-                                  "link",
-                                ],
-                              },
-                              url: { type: "string" },
-                            },
-                            required: ["kind"],
-                          },
-                          annotations: {
-                            readOnlyHint: false,
-                            destructiveHint: false,
-                          },
-                        },
-                      ]
-                    : []),
-                ],
+                tools: TOOLS.filter((t) => info.allowWrite || !t.write).map(
+                  ({ write, destructive, ...tool }) => ({
+                    ...tool,
+                    annotations: {
+                      readOnlyHint: !write,
+                      ...(write ? { destructiveHint: !!destructive } : {}),
+                    },
+                  }),
+                ),
               };
               break;
             case "tools/call": {
               const name = rpc.params?.name;
-              if (
-                ![
-                  "list_canvases",
-                  "read_active_canvas",
-                  ...(info.allowWrite ? ["add_elements", "add_block"] : []),
-                ].includes(name)
-              ) {
+              const tool = TOOLS.find((t) => t.name === name);
+              if (!tool || (tool.write && !info.allowWrite)) {
                 result = {
                   isError: true,
                   content: [
@@ -193,14 +266,11 @@ export function createAgentServer(
                 break;
               }
               try {
+                const value = await run(name, rpc.params?.arguments ?? {});
                 result = {
-                  content: [
-                    {
-                      type: "text",
-                      text: JSON.stringify(
-                        await run(name, rpc.params?.arguments ?? {}),
-                      ),
-                    },
+                  // Tools may return MCP content directly (e.g. screenshots).
+                  content: (value as { mcpContent?: unknown })?.mcpContent ?? [
+                    { type: "text", text: JSON.stringify(value) },
                   ],
                 };
               } catch (e) {
