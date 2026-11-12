@@ -1,0 +1,256 @@
+/* ─── Design tokens ─────────────────────────────────────────────────────────
+   Every color in the app comes from here. A theme is a small palette; the
+   rest is derived from it, so a new theme is ~20 lines.
+
+   Selectors are attribute-based (not only :root) so a nested element with its
+   own data-theme renders that theme — the Settings previews rely on this. */
+
+:root {
+  --titlebar-height: 40px;
+
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+
+  /* Things that appear ease out; things that move get a little spring. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --dur-slow: 360ms;
+}
+
+/* ── Palettes ── */
+
+/* Slate — the original Cadanraw look, and the default. */
+:root,
+[data-theme="slate"] {
+  --void: #080c11;
+  --deep: #0b1016;
+  --base: #10151c;
+  --raised: #151b23;
+  --surface: #1a212b;
+  --overlay: #212b36;
+  --text: #e3e9ef;
+  --text-dim: #9aa5b1;
+  --text-muted: #7c8794;
+  --line: #c0d3e8;
+  --accent: #a7c7ee;
+  --accent-ink: #142132;
+  --positive: #8dcbb0;
+  --positive-ink: #153328;
+  --canvas: #0b1016;
+  --grid-ink: #788a9c;
+  --card: #171c23;
+}
+
+[data-theme="midnight"] {
+  --void: #040406;
+  --deep: #08080b;
+  --base: #0d0d12;
+  --raised: #131319;
+  --surface: #191921;
+  --overlay: #20202b;
+  --text: #ececf2;
+  --text-dim: #a0a0b0;
+  --text-muted: #77778c;
+  --line: #d2d2ff;
+  --accent: #a596ff;
+  --accent-ink: #15102e;
+  --positive: #7ad3a8;
+  --positive-ink: #0f2b1e;
+  --canvas: #08080b;
+  --grid-ink: #7f7f9a;
+  --card: #14141b;
+}
+
+[data-theme="ember"] {
+  --void: #0c0806;
+  --deep: #120d0a;
+  --base: #18120e;
+  --raised: #1f1712;
+  --surface: #271d17;
+  --overlay: #30241c;
+  --text: #f2e9e0;
+  --text-dim: #b6a698;
+  --text-muted: #8f7f72;
+  --line: #f1d9bf;
+  --accent: #f2aa6b;
+  --accent-ink: #301a08;
+  --positive: #a9d08f;
+  --positive-ink: #1c2e12;
+  --canvas: #120d0a;
+  --grid-ink: #a08972;
+  --card: #1e1611;
+}
+
+[data-theme="forest"] {
+  --void: #060a08;
+  --deep: #0a100d;
+  --base: #0e1612;
+  --raised: #131d18;
+  --surface: #18251e;
+  --overlay: #1f2f26;
+  --text: #e4eee7;
+  --text-dim: #9fb2a6;
+  --text-muted: #7b8e83;
+  --line: #c5e4d1;
+  --accent: #8fd9a8;
+  --accent-ink: #0d2a18;
+  --positive: #b9dd8f;
+  --positive-ink: #1d2e0c;
+  --canvas: #0a100d;
+  --grid-ink: #7a9384;
+  --card: #121a16;
+}
+
+[data-theme="plum"] {
+  --void: #0a060c;
+  --deep: #100a13;
+  --base: #160f1a;
+  --raised: #1d1422;
+  --surface: #251a2b;
+  --overlay: #2e2136;
+  --text: #f0e7f2;
+  --text-dim: #b3a2b9;
+  --text-muted: #8c7b93;
+  --line: #e7cdf1;
+  --accent: #eba0c8;
+  --accent-ink: #32102a;
+  --positive: #8dcbb0;
+  --positive-ink: #153328;
+  --canvas: #100a13;
+  --grid-ink: #96829f;
+  --card: #1b1320;
+}
+
+/* Paper — warm, light. */
+[data-theme="paper"] {
+  --void: #e6e0d2;
+  --deep: #efeadf;
+  --base: #f5f1e7;
+  --raised: #faf7f0;
+  --surface: #fffdf8;
+  --overlay: #fffdf8;
+  --text: #2b2621;
+  --text-dim: #6a6157;
+  --text-muted: #8d8478;
+  --line: #2b2621;
+  --accent: #c1542b;
+  --accent-ink: #fff8f2;
+  --positive: #3e8f5e;
+  --positive-ink: #f3fbf5;
+  --canvas: #f8f5ed;
+  --grid-ink: #7d7263;
+  --card: #fffdf8;
+}
+
+/* Glacier — cool, light. */
+[data-theme="glacier"] {
+  --void: #e1e6ed;
+  --deep: #ebeff4;
+  --base: #f2f5f8;
+  --raised: #f8fafc;
+  --surface: #ffffff;
+  --overlay: #ffffff;
+  --text: #1b2430;
+  --text-dim: #586475;
+  --text-muted: #7d8898;
+  --line: #1b2430;
+  --accent: #2c6cdb;
+  --accent-ink: #f4f8ff;
+  --positive: #2b986a;
+  --positive-ink: #f2fbf7;
+  --canvas: #f5f7fa;
+  --grid-ink: #71809a;
+  --card: #ffffff;
+}
+
+/* ── Scheme (set alongside data-theme) ── */
+:root,
+[data-scheme="dark"] {
+  color-scheme: dark;
+  --mix: #ffffff; /* what "stronger" mixes toward */
+  /* Chrome (title bar, sidebar) frames the content; panels sit on the content. */
+  --chrome: var(--base);
+  --content: var(--deep);
+  --panel: var(--base);
+  --card-line-mix: 8%;
+  --tone-mix: 14%;
+  --line-1: 5.5%;
+  --line-2: 9%;
+  --line-3: 16%;
+  --danger: #ec9c9c;
+  --scrim: rgb(0 0 0 / 0.5);
+  --shadow-rgb: 0 0 0;
+  --shadow-pop: 0 18px 50px rgb(0 0 0 / 0.36), 0 2px 8px rgb(0 0 0 / 0.2);
+  --shadow-card: 0 10px 28px -12px rgb(0 0 0 / 0.55);
+}
+[data-scheme="light"] {
+  color-scheme: light;
+  --mix: #000000;
+  --chrome: var(--deep);
+  --content: var(--raised);
+  --panel: var(--surface);
+  --card-line-mix: 14%;
+  --tone-mix: 24%;
+  --line-1: 7%;
+  --line-2: 11%;
+  --line-3: 20%;
+  --danger: #c2392f;
+  --scrim: rgb(24 24 32 / 0.24);
+  --shadow-rgb: 40 36 30;
+  --shadow-pop: 0 18px 46px rgb(40 36 30 / 0.16), 0 2px 8px rgb(40 36 30 / 0.08);
+  --shadow-card: 0 10px 26px -12px rgb(40 36 30 / 0.22);
+}
+
+/* ── Derived (recomputed wherever a palette is set) ── */
+:root,
+[data-theme] {
+  --border-dim: color-mix(in srgb, var(--line) var(--line-1), transparent);
+  --border: color-mix(in srgb, var(--line) var(--line-2), transparent);
+  --border-strong: color-mix(in srgb, var(--line) var(--line-3), transparent);
+
+  --accent-soft: color-mix(in srgb, var(--accent) 13%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent) 34%, transparent);
+  --accent-glow: color-mix(in srgb, var(--accent) 30%, transparent);
+  --accent-strong: color-mix(in srgb, var(--accent) 78%, var(--mix));
+  --positive-soft: color-mix(in srgb, var(--positive) 13%, transparent);
+  --danger-soft: color-mix(in srgb, var(--danger) 12%, transparent);
+
+  /* Hover / pressed washes that work on any surface. */
+  --fill: color-mix(in srgb, var(--text) 5%, transparent);
+  --fill-2: color-mix(in srgb, var(--text) 8%, transparent);
+  --fill-3: color-mix(in srgb, var(--text) 13%, transparent);
+
+  --glass: color-mix(in srgb, var(--overlay) 84%, transparent);
+  --island: color-mix(in srgb, var(--raised) 50%, var(--surface));
+  --focus-ring: color-mix(in srgb, var(--accent) 72%, transparent);
+
+  /* Rich blocks on the board. */
+  --card-text: var(--text);
+  --card-text-2: color-mix(in srgb, var(--text) 84%, var(--card));
+  --card-text-3: color-mix(in srgb, var(--text) 60%, var(--card));
+  --card-line: color-mix(in srgb, var(--line) var(--card-line-mix), transparent);
+  --card-line-strong: color-mix(in srgb, var(--line) 14%, transparent);
+
+  /* Board background pattern, at the "normal" strength. */
+  --grid-dot: color-mix(in srgb, var(--grid-ink) 31%, transparent);
+  --grid-rule: color-mix(in srgb, var(--grid-ink) 13%, transparent);
+  --grid-mark: color-mix(in srgb, var(--grid-ink) 48%, transparent);
+}
+:root[data-grid-strength="subtle"],
+[data-grid-strength="subtle"] [data-theme] {
+  --grid-dot: color-mix(in srgb, var(--grid-ink) 19%, transparent);
+  --grid-rule: color-mix(in srgb, var(--grid-ink) 8%, transparent);
+  --grid-mark: color-mix(in srgb, var(--grid-ink) 30%, transparent);
+}
+:root[data-grid-strength="bold"],
+[data-grid-strength="bold"] [data-theme] {
+  --grid-dot: color-mix(in srgb, var(--grid-ink) 52%, transparent);
+  --grid-rule: color-mix(in srgb, var(--grid-ink) 22%, transparent);
+  --grid-mark: color-mix(in srgb, var(--grid-ink) 74%, transparent);
+}

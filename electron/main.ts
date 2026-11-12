@@ -7,6 +7,8 @@ import {
   screen,
   shell,
   net,
+  globalShortcut,
+  nativeTheme,
   type MenuItemConstructorOptions,
 } from "electron";
 import * as path from "path";
@@ -219,12 +221,134 @@ interface AgentSettings {
   token?: string;
   port?: number;
 }
-const store = new Store<{ windowBounds: WindowBounds; agent: AgentSettings }>({
+/** What the renderer's preferences mean for the native side. Kept here too so
+ *  the window opens in the right colour and the shortcut works before any page loads. */
+interface NativePrefs {
+  scheme: "dark" | "light";
+  background: string;
+  capture: { enabled: boolean; shortcut: string };
+}
+const store = new Store<{
+  windowBounds: WindowBounds;
+  agent: AgentSettings;
+  prefs: NativePrefs;
+}>({
   defaults: {
     windowBounds: { width: 1280, height: 800 },
     agent: { enabled: false, allowWrite: false },
+    prefs: {
+      scheme: "dark",
+      background: "#0b1016",
+      capture: { enabled: true, shortcut: "Control+Alt+Space" },
+    },
   },
 });
+
+// The packaged app loads its built files; so does a dev run with
+// CADANRAW_LOAD_DIST=1 (the smoke test uses it to check the production build).
+const loadsBuiltFiles = app.isPackaged || process.env.CADANRAW_LOAD_DIST === "1";
+const pageUrl = (hash = "") =>
+  loadsBuiltFiles ? null : `http://localhost:5173/${hash ? `#${hash}` : ""}`;
+
+/** Load the app (or one of its faces, by hash) into a window. */
+function loadPage(win: BrowserWindow, hash = "") {
+  const url = pageUrl(hash);
+  if (url) void win.loadURL(url);
+  else
+    void win.loadFile(path.join(__dirname, "../dist/index.html"), hash ? { hash } : undefined);
+}
+
+// ── Quick note: a small panel summoned from anywhere by a global shortcut ──
+let captureWindow: BrowserWindow | null = null;
+let captureIdle: NodeJS.Timeout | null = null;
+let registeredShortcut: string | null = null;
+const CAPTURE_SIZE = { width: 580, height: 156 };
+const CAPTURE_IDLE_MS = 10 * 60 * 1000;
+
+function hideCapture() {
+  if (!captureWindow || captureWindow.isDestroyed() || !captureWindow.isVisible()) return;
+  captureWindow.hide();
+  // Keep it warm for a while (showing a built window is instant), then give
+  // the memory back.
+  if (captureIdle) clearTimeout(captureIdle);
+  captureIdle = setTimeout(() => {
+    captureWindow?.destroy();
+    captureWindow = null;
+  }, CAPTURE_IDLE_MS);
+}
+
+function showCapture() {
+  if (captureIdle) clearTimeout(captureIdle);
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  const position = {
+    x: Math.round(display.x + (display.width - CAPTURE_SIZE.width) / 2),
+    y: Math.round(display.y + display.height * 0.22),
+  };
+  const reveal = (win: BrowserWindow) => {
+    win.setPosition(position.x, position.y);
+    win.show();
+    win.focus();
+    win.webContents.send("capture:show");
+  };
+  if (captureWindow && !captureWindow.isDestroyed()) return reveal(captureWindow);
+
+  const win = new BrowserWindow({
+    ...CAPTURE_SIZE,
+    ...position,
+    show: false,
+    frame: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    backgroundColor: store.get("prefs").background,
+    // A panel takes the keyboard without bringing the main window forward.
+    ...(process.platform === "darwin" ? { type: "panel" as const } : {}),
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  win.on("blur", hideCapture);
+  win.on("closed", () => {
+    if (captureWindow === win) captureWindow = null;
+  });
+  win.once("ready-to-show", () => reveal(win));
+  loadPage(win, "capture");
+  captureWindow = win;
+}
+
+function toggleCapture() {
+  if (captureWindow && !captureWindow.isDestroyed() && captureWindow.isVisible()) hideCapture();
+  else showCapture();
+}
+
+/** Bring the native side in line with the preferences. Returns whether the
+ *  quick-note shortcut is live, so Settings can say so truthfully. */
+function applyNativePrefs(prefs: NativePrefs): { captureRegistered: boolean } {
+  nativeTheme.themeSource = prefs.scheme;
+  for (const win of [mainWindow, captureWindow])
+    if (win && !win.isDestroyed()) win.setBackgroundColor(prefs.background);
+
+  const wanted = prefs.capture.enabled ? prefs.capture.shortcut : null;
+  if (wanted !== registeredShortcut) {
+    if (registeredShortcut) globalShortcut.unregister(registeredShortcut);
+    registeredShortcut = null;
+    if (wanted) {
+      try {
+        if (globalShortcut.register(wanted, toggleCapture)) registeredShortcut = wanted;
+      } catch {
+        // An accelerator Electron can't parse: leave it unregistered.
+      }
+    }
+  }
+  return { captureRegistered: !wanted || registeredShortcut === wanted };
+}
 
 let agentSetup: ReturnType<typeof createAgentSetup> | null = null;
 
@@ -303,7 +427,7 @@ function createWindow(): BrowserWindow {
     minWidth: MIN_WIDTH,
     minHeight: MIN_HEIGHT,
     show: false, // reveal once content is ready — avoids a white flash
-    backgroundColor: "#0A0A10", // --deep; solid (no vibrancy behind the canvas)
+    backgroundColor: store.get("prefs").background, // the theme's --deep; solid behind the canvas
     ...(isMac
       ? {
           titleBarStyle: "hiddenInset" as const,
@@ -320,11 +444,7 @@ function createWindow(): BrowserWindow {
     },
   });
 
-  if (app.isPackaged) {
-    win.loadFile(path.join(__dirname, "../dist/index.html"));
-  } else {
-    win.loadURL("http://localhost:5173");
-  }
+  loadPage(win);
 
   win.once("ready-to-show", () => win.show());
 
@@ -381,6 +501,12 @@ function buildMenu(): Menu {
             submenu: [
               { role: "about" },
               { type: "separator" },
+              {
+                label: "Settings…",
+                accelerator: "CmdOrCtrl+,",
+                click: send("settings"),
+              },
+              { type: "separator" },
               { role: "hide" },
               { role: "hideOthers" },
               { role: "unhide" },
@@ -394,12 +520,16 @@ function buildMenu(): Menu {
       label: "File",
       submenu: [
         {
-          label: "New Canvas",
+          label: "New Board…",
           accelerator: "CmdOrCtrl+N",
           click: send("new-canvas"),
         },
         {
-          label: "Open…",
+          label: "Quick Note",
+          click: () => showCapture(),
+        },
+        {
+          label: "Import…",
           accelerator: "CmdOrCtrl+O",
           click: send("open-import"),
         },
@@ -413,6 +543,12 @@ function buildMenu(): Menu {
         { label: "Export…", accelerator: "CmdOrCtrl+E", click: send("export") },
         ...(!isMac
           ? [
+              { type: "separator" as const },
+              {
+                label: "Settings…",
+                accelerator: "CmdOrCtrl+,",
+                click: send("settings"),
+              },
               { type: "separator" as const },
               { label: "Exit", role: "quit" as const },
             ]
@@ -432,20 +568,44 @@ function buildMenu(): Menu {
         { role: "copy", registerAccelerator: false },
         { role: "paste", registerAccelerator: false },
         { role: "selectAll", registerAccelerator: false },
+        { type: "separator" },
+        { label: "Insert Block…", click: send("insert") },
       ],
     },
     {
       label: "View",
       submenu: [
         {
+          label: "Search…",
+          accelerator: "CmdOrCtrl+K",
+          click: send("command-palette"),
+        },
+        {
+          label: "Go to Board…",
+          accelerator: "CmdOrCtrl+P",
+          click: send("go-to-board"),
+        },
+        { label: "Home", accelerator: "CmdOrCtrl+1", click: send("home") },
+        { type: "separator" },
+        {
           label: "Toggle Sidebar",
           accelerator: "CmdOrCtrl+B",
           click: send("toggle-sidebar"),
         },
+        {
+          label: "Focus Mode",
+          accelerator: "CmdOrCtrl+.",
+          click: send("focus-mode"),
+        },
         { type: "separator" },
-        { role: "reload" },
-        { role: "toggleDevTools" },
-        { type: "separator" },
+        // Reloading would drop the editor mid-thought; it's a development tool.
+        ...(app.isPackaged
+          ? []
+          : [
+              { role: "reload" as const },
+              { role: "toggleDevTools" as const },
+              { type: "separator" as const },
+            ]),
         { role: "resetZoom" },
         { role: "zoomIn" },
         { role: "zoomOut" },
@@ -538,9 +698,39 @@ app.whenReady().then(() => {
     else pending.resolve(response.result);
   });
 
+  ipcMain.handle("prefs:sync", (_e, prefs: NativePrefs) => {
+    const next: NativePrefs = {
+      scheme: prefs?.scheme === "light" ? "light" : "dark",
+      background: /^#[0-9a-f]{6}$/i.test(prefs?.background ?? "")
+        ? prefs.background
+        : store.get("prefs").background,
+      capture: {
+        enabled: prefs?.capture?.enabled !== false,
+        shortcut:
+          typeof prefs?.capture?.shortcut === "string" && prefs.capture.shortcut.length < 64
+            ? prefs.capture.shortcut
+            : store.get("prefs").capture.shortcut,
+      },
+    };
+    store.set("prefs", next);
+    return applyNativePrefs(next);
+  });
+  ipcMain.handle("capture:open", () => showCapture());
+  ipcMain.on("capture:hide", () => hideCapture());
+  // The panel only collects text; the main window files it onto a board.
+  ipcMain.handle("capture:submit", (_e, text: string) =>
+    askRenderer("capture_note", { text: String(text ?? "").slice(0, 20000) }),
+  );
+  ipcMain.handle("app:reveal-data", () => shell.openPath(dataDir));
+  ipcMain.handle("window:set-buttons-hidden", (_e, hidden: boolean) => {
+    if (process.platform === "darwin" && mainWindow && !mainWindow.isDestroyed())
+      mainWindow.setWindowButtonVisibility(!hidden);
+  });
+
   ipcMain.handle("app:get-info", () => ({
     name: app.getName(),
     version: app.getVersion(),
+    dataPath: dataDir,
     electron: process.versions.electron,
     chrome: process.versions.chrome,
   }));
@@ -632,6 +822,7 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(buildMenu());
 
   mainWindow = createWindow();
+  applyNativePrefs(store.get("prefs"));
 
   if (process.platform === "darwin") {
     // macOS: re-summon the window from the dock after a Cmd+W hide.
@@ -648,6 +839,8 @@ app.whenReady().then(() => {
 
 app.on("before-quit", () => {
   isQuitting = true;
+  globalShortcut.unregisterAll();
+  captureWindow?.destroy();
   persistBounds();
   agentSetup?.publish(null);
   void agentServer.stop();

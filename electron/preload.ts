@@ -70,9 +70,30 @@ const api = {
       ipcRenderer.send("agent:response", response),
   },
   platform: process.platform,
+  prefs: {
+    sync: (prefs: {
+      scheme: "dark" | "light";
+      background: string;
+      capture: { enabled: boolean; shortcut: string };
+    }): Promise<{ captureRegistered: boolean }> =>
+      ipcRenderer.invoke("prefs:sync", prefs),
+  },
+  capture: {
+    open: (): Promise<void> => ipcRenderer.invoke("capture:open"),
+    hide: (): void => ipcRenderer.send("capture:hide"),
+    submit: (text: string): Promise<{ board: string }> =>
+      ipcRenderer.invoke("capture:submit", text),
+    onShow: (cb: () => void): (() => void) => {
+      const handler = () => cb();
+      ipcRenderer.on("capture:show", handler);
+      return () => ipcRenderer.removeListener("capture:show", handler);
+    },
+  },
+  revealDataFolder: (): Promise<void> => ipcRenderer.invoke("app:reveal-data"),
   getAppInfo: (): Promise<{
     name: string;
     version: string;
+    dataPath: string;
     electron: string;
     chrome: string;
   }> => ipcRenderer.invoke("app:get-info"),
@@ -107,6 +128,8 @@ const api = {
     close: (): Promise<void> => ipcRenderer.invoke("window:close"),
     isMaximized: (): Promise<boolean> =>
       ipcRenderer.invoke("window:is-maximized"),
+    setButtonsHidden: (hidden: boolean): Promise<void> =>
+      ipcRenderer.invoke("window:set-buttons-hidden", hidden),
     onMaximizedChange: (cb: (maximized: boolean) => void): (() => void) => {
       const handler = (_e: unknown, maximized: boolean) => cb(maximized);
       ipcRenderer.on("window:maximized-change", handler);

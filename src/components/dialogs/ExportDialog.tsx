@@ -26,20 +26,20 @@ export default function ExportDialog() {
 
   return (
     <Modal open={open} onClose={close}>
-      <h2 className="mb-3 text-[15px] font-semibold text-ink">Export canvas</h2>
+      <h2 className="dialog-title">Export board</h2>
       <div className="flex flex-col gap-2">
         {OPTIONS.map((o) => (
           <button
             key={o.format}
             onClick={() => choose(o.format)}
-            className="no-drag flex flex-col items-start rounded-lg border border-edge bg-raised px-3 py-2.5 text-left transition-colors hover:border-accent/50 hover:bg-surface"
+            className="choice-row press no-drag"
           >
-            <span className="text-[13px] font-medium text-ink">{o.label}</span>
-            <span className="text-[11.5px] text-ink-muted">{o.desc}</span>
+            <strong>{o.label}</strong>
+            <small>{o.desc}</small>
           </button>
         ))}
       </div>
-      <div className="mt-4 flex justify-end">
+      <div className="dialog-actions">
         <Button onClick={close}>Cancel</Button>
       </div>
     </Modal>

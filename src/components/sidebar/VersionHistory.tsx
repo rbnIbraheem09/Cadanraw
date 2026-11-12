@@ -11,7 +11,7 @@ export default function VersionHistory() {
   if (!activeId) return null;
 
   return (
-    <div className="shrink-0 border-t border-edge">
+    <div className="shrink-0 border-t border-edge-dim">
       <div className="flex items-center justify-between px-3 py-2.5">
         <button
           onClick={toggle}
@@ -32,14 +32,14 @@ export default function VersionHistory() {
           </svg>
           History
           {versions.length > 0 && (
-            <span className="text-ink-muted/60">{versions.length}</span>
+            <span className="opacity-60">{versions.length}</span>
           )}
         </button>
         <button
           onClick={openSaveVersion}
-          title="Save version (⌘⇧S)"
+          title="Save a version"
           aria-label="Save version"
-          className="no-drag flex h-6 w-6 items-center justify-center rounded-md text-ink-dim transition-colors hover:bg-raised hover:text-accent"
+          className="no-drag flex h-6 w-6 items-center justify-center rounded-md text-ink-dim transition-colors hover:bg-fill-2 hover:text-ink"
         >
           <svg
             width="14"
@@ -66,7 +66,7 @@ export default function VersionHistory() {
           <div className="max-h-[38vh] overflow-y-auto px-1.5 pb-2">
             {versions.length === 0 ? (
               <p className="px-2 py-3 text-[11.5px] leading-relaxed text-ink-muted">
-                No versions yet. Save a checkpoint with ⌘⇧S.
+                No versions yet. Save one to keep a point you can come back to.
               </p>
             ) : (
               versions.map((v) => <VersionListItem key={v.id} version={v} />)

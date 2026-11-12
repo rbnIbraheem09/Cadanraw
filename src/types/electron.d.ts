@@ -49,9 +49,25 @@ declare global {
         }): void;
       };
       platform: NodeJS.Platform;
+      prefs: {
+        /** Mirror what the native side needs; reports whether the shortcut took. */
+        sync(prefs: {
+          scheme: "dark" | "light";
+          background: string;
+          capture: { enabled: boolean; shortcut: string };
+        }): Promise<{ captureRegistered: boolean }>;
+      };
+      capture: {
+        open(): Promise<void>;
+        hide(): void;
+        submit(text: string): Promise<{ board: string }>;
+        onShow(cb: () => void): () => void;
+      };
+      revealDataFolder: () => Promise<void>;
       getAppInfo: () => Promise<{
         name: string;
         version: string;
+        dataPath: string;
         electron: string;
         chrome: string;
       }>;
@@ -111,6 +127,7 @@ declare global {
         toggleMaximize(): Promise<boolean>;
         close(): Promise<void>;
         isMaximized(): Promise<boolean>;
+        setButtonsHidden(hidden: boolean): Promise<void>;
         onMaximizedChange(cb: (maximized: boolean) => void): () => void;
       };
       onMenuAction(cb: (action: string) => void): () => void;

@@ -17,8 +17,17 @@ import type {
 } from "@excalidraw/excalidraw/types";
 import type { CanvasMeta, FolderMeta } from "../types/canvas";
 import type { VersionMeta } from "../types/version";
+import { useUi } from "./ui";
+import { usePrefs } from "./prefs";
+import { sfx } from "../lib/sound";
+import { forgetView } from "../lib/viewport";
+import {
+  buildTemplateScene,
+  prepareTemplateFonts,
+  type TemplateId,
+} from "../lib/templates";
 
-export const DEFAULT_SIDEBAR_WIDTH = 264;
+export const DEFAULT_SIDEBAR_WIDTH = 248;
 export const MIN_SIDEBAR_WIDTH = 200;
 export const MAX_SIDEBAR_WIDTH = 480;
 const AUTO_VERSION_INTERVAL_MS = 30 * 60 * 1000; // snapshot at most every 30 min of editing
@@ -87,6 +96,9 @@ interface ExcaliState {
   lastVersionAt: number; // ms epoch, for the 30-min auto-version cadence
   previewVersionId: string | null;
   previewJson: string | null;
+  /** Bumped when a board's content is replaced underneath the editor (a
+   *  restore), so the editor reloads instead of saving the old scene back. */
+  sceneRevision: number;
 
   // ── Shared library (one .excalidrawlib across all canvases) ──
   libraryItems: LibraryItems;
@@ -97,13 +109,14 @@ interface ExcaliState {
   sidebarWidth: number;
   historyOpen: boolean;
   lastActiveCanvasId: string | null;
+  /** Most recently opened boards, newest first (for the quick switcher). */
+  recentIds: string[];
 
   // ── Ephemeral UI ──
   newCanvasDialogOpen: boolean;
   saveVersionDialogOpen: boolean;
   exportDialogOpen: boolean;
   pendingDeleteId: string | null;
-  searchQuery: string;
   toasts: Toast[];
 
   // ── Actions ──
@@ -115,7 +128,7 @@ interface ExcaliState {
   refreshVersions: () => Promise<void>;
   bootstrap: () => Promise<void>;
   openCanvas: (id: string) => Promise<void>;
-  createCanvas: (name: string) => Promise<void>;
+  createCanvas: (name: string, template?: TemplateId) => Promise<void>;
   importCanvas: (name: string, json: string) => Promise<void>;
   exportActiveCanvas: (format: ExportFormat) => Promise<void>;
   requestExport: (id: string) => Promise<void>;
@@ -123,7 +136,6 @@ interface ExcaliState {
   togglePin: (id: string) => Promise<void>;
   renameCanvas: (id: string, name: string) => Promise<void>;
   deleteCanvas: (id: string) => Promise<void>;
-  setSearchQuery: (q: string) => void;
   saveActiveCanvas: (opts?: {
     notify?: boolean;
     skipAutoVersion?: boolean;
@@ -152,6 +164,9 @@ interface ExcaliState {
 
 // State applied whenever a different canvas becomes active. Baseline hash comes
 // from the file, and version/preview tracking resets for the new canvas.
+const remember = (recent: string[], id: string) =>
+  [id, ...recent.filter((r) => r !== id)].slice(0, 12);
+
 const freshCanvasState = (lastSavedAt: string | null, baseHash: number) => ({
   isDirty: false,
   saving: false,
@@ -179,6 +194,7 @@ export const useStore = create<ExcaliState>()(
         const json = await get().saveActiveCanvas();
         if (!json && get().isDirty && get().api) return;
         ++loadToken;
+        useUi.getState().closeSettings();
         set({
           homeOpen: true,
           currentFolderId: folderId,
@@ -253,6 +269,7 @@ export const useStore = create<ExcaliState>()(
       lastVersionAt: 0,
       previewVersionId: null,
       previewJson: null,
+      sceneRevision: 0,
 
       libraryItems: [],
       savedLibraryHash: 0,
@@ -261,23 +278,26 @@ export const useStore = create<ExcaliState>()(
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       historyOpen: true,
       lastActiveCanvasId: null,
+      recentIds: [],
 
       newCanvasDialogOpen: false,
       saveVersionDialogOpen: false,
       exportDialogOpen: false,
       pendingDeleteId: null,
-      searchQuery: "",
       toasts: [],
 
       setApi: (api) => set({ api }),
 
+      // Excalidraw reports a change on every pointer move; only touch the
+      // store (and wake its subscribers) when the content really changed.
       markChanged: (sceneHash) => {
-        if (!get().activeCanvasId) return;
-        const dirty = sceneHash !== get().savedSceneHash;
+        const s = get();
+        if (!s.activeCanvasId || sceneHash === s.currentSceneHash) return;
+        const dirty = sceneHash !== s.savedSceneHash;
         set({
           currentSceneHash: sceneHash,
           isDirty: dirty,
-          editedSinceVersion: get().editedSinceVersion || dirty,
+          editedSinceVersion: s.editedSinceVersion || dirty,
         });
       },
 
@@ -335,7 +355,7 @@ export const useStore = create<ExcaliState>()(
         await get().loadLibrary(); // load before opening a canvas so it seeds the editor
         const last = get().lastActiveCanvasId;
         if (
-          !get().homeOpen &&
+          usePrefs.getState().launch === "last" &&
           last &&
           get().canvases.some((c) => c.id === last)
         ) {
@@ -344,6 +364,7 @@ export const useStore = create<ExcaliState>()(
       },
 
       openCanvas: async (id) => {
+        useUi.getState().closeSettings();
         if (id === get().activeCanvasId && !get().homeOpen) return;
         await get().saveActiveCanvas(); // never lose the current canvas's edits
         const token = ++loadToken;
@@ -356,6 +377,7 @@ export const useStore = create<ExcaliState>()(
             activeCanvasId: id,
             activeCanvasJson: json,
             lastActiveCanvasId: id,
+            recentIds: remember(get().recentIds, id),
             loading: false,
             ...freshCanvasState(
               get().canvases.find((c) => c.id === id)?.updatedAt ?? null,
@@ -370,9 +392,17 @@ export const useStore = create<ExcaliState>()(
         }
       },
 
-      createCanvas: async (name) => {
+      createCanvas: async (name, template = "blank") => {
         await get().saveActiveCanvas();
-        const meta = await window.excali.canvases.create(name);
+        useUi.getState().closeSettings();
+        if (template !== "blank") await prepareTemplateFonts();
+        const meta =
+          template === "blank"
+            ? await window.excali.canvases.create(name)
+            : await window.excali.canvases.import(
+                name,
+                buildTemplateScene(template),
+              );
         if (get().currentFolderId)
           await window.excali.canvases.move(meta.id, get().currentFolderId);
         await get().refreshList();
@@ -385,8 +415,10 @@ export const useStore = create<ExcaliState>()(
             activeCanvasId: meta.id,
             activeCanvasJson: json,
             lastActiveCanvasId: meta.id,
+            recentIds: remember(get().recentIds, meta.id),
             ...freshCanvasState(meta.updatedAt, hashSceneJson(json)),
           });
+          sfx.drop();
           await get().refreshVersions();
         } catch (err) {
           console.error("Failed to open new canvas", err);
@@ -506,19 +538,21 @@ export const useStore = create<ExcaliState>()(
         }));
       },
 
-      setSearchQuery: (q) => set({ searchQuery: q }),
-
       deleteCanvas: async (id) => {
         await window.excali.canvases.remove(id);
+        forgetView(id);
         const wasActive = get().activeCanvasId === id;
         set((s) => ({
           canvases: s.canvases.filter((c) => c.id !== id),
+          recentIds: s.recentIds.filter((r) => r !== id),
           pendingDeleteId: null,
           ...(wasActive
             ? {
                 activeCanvasId: null,
                 activeCanvasJson: null,
                 lastActiveCanvasId: null,
+                homeOpen: true,
+                api: null,
                 versions: [],
                 ...freshCanvasState(null, 0),
               }
@@ -635,7 +669,9 @@ export const useStore = create<ExcaliState>()(
             get().canvases.find((c) => c.id === activeCanvasId)?.updatedAt ??
             null;
           set({
+            api: null,
             activeCanvasJson: json,
+            sceneRevision: get().sceneRevision + 1,
             ...freshCanvasState(updatedAt, hashSceneJson(json)),
           });
           await get().refreshVersions();
@@ -683,8 +719,9 @@ export const useStore = create<ExcaliState>()(
 
       pushToast: (message, type) => {
         const id = ++toastSeq;
-        set((s) => ({ toasts: [...s.toasts, { id, message, type }] }));
-        setTimeout(() => get().dismissToast(id), 2600);
+        if (type === "error") sfx.error();
+        set((s) => ({ toasts: [...s.toasts.slice(-2), { id, message, type }] }));
+        setTimeout(() => get().dismissToast(id), type === "error" ? 4200 : 2600);
       },
       dismissToast: (id) =>
         set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
@@ -696,6 +733,7 @@ export const useStore = create<ExcaliState>()(
         sidebarWidth: s.sidebarWidth,
         historyOpen: s.historyOpen,
         lastActiveCanvasId: s.lastActiveCanvasId,
+        recentIds: s.recentIds,
         libraryView: s.libraryView,
       }),
     },

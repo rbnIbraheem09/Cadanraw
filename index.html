@@ -13,8 +13,20 @@
       content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https://img.youtube.com; frame-src https://www.youtube-nocookie.com https://www.youtube.com;  worker-src 'self' blob:; connect-src 'self' https: ws://localhost:5173 http://localhost:* http://127.0.0.1:*"
     />
     <script>
-      // Dark-only app — lock the theme before first paint to avoid any flash.
-      document.documentElement.setAttribute("data-theme", "dark");
+      // Apply the saved theme before first paint so there is never a flash.
+      // (Mirrors applyPrefs in src/store/prefs.ts; the app takes over once loaded.)
+      (function () {
+        var root = document.documentElement;
+        var p = {};
+        try {
+          p = JSON.parse(localStorage.getItem("cadanraw-prefs") || "{}").state || {};
+        } catch (e) {}
+        var theme = p.theme || "slate";
+        root.dataset.theme = theme;
+        root.dataset.scheme = theme === "paper" || theme === "glacier" ? "light" : "dark";
+        root.dataset.gridStrength = p.gridStrength || "normal";
+        root.dataset.motion = p.motion || "system";
+      })();
       // Excalidraw loads its drawing fonts at runtime from this base + "fonts/…".
       // We self-host them under public/fonts. A FULL URL to the document directory
       // works in both dev (http://localhost:5173/) and the packaged app

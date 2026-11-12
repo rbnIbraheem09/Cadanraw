@@ -1,18 +1,14 @@
-import { useState, type KeyboardEvent, type MouseEvent } from "react";
+import { memo, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { Pin } from "lucide-react";
 import ContextMenu from "../ui/ContextMenu";
 import { useStore } from "../../store/excaliStore";
-import { formatRelativeTime, pluralize } from "../../lib/format";
+import { formatRelativeTime } from "../../lib/format";
+import { boardMenuItems, openBoard } from "../../lib/board-actions";
 import type { CanvasMeta } from "../../types/canvas";
 
-export default function CanvasListItem({ canvas }: { canvas: CanvasMeta }) {
-  const isActive = useStore((s) => s.activeCanvasId === canvas.id);
-  const openCanvas = useStore((s) => s.openCanvas);
+function CanvasListItem({ canvas }: { canvas: CanvasMeta }) {
+  const isActive = useStore((s) => !s.homeOpen && s.activeCanvasId === canvas.id);
   const renameCanvas = useStore((s) => s.renameCanvas);
-  const requestDelete = useStore((s) => s.requestDelete);
-  const duplicateCanvas = useStore((s) => s.duplicateCanvas);
-  const togglePin = useStore((s) => s.togglePin);
-  const setMovingCanvas = useStore((s) => s.setMovingCanvas);
-  const requestExport = useStore((s) => s.requestExport);
 
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [editing, setEditing] = useState(false);
@@ -26,7 +22,7 @@ export default function CanvasListItem({ canvas }: { canvas: CanvasMeta }) {
   const commitRename = () => {
     setEditing(false);
     const next = draft.trim();
-    if (next && next !== canvas.name) renameCanvas(canvas.id, next);
+    if (next && next !== canvas.name) void renameCanvas(canvas.id, next);
   };
 
   const onEditKey = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -45,57 +41,44 @@ export default function CanvasListItem({ canvas }: { canvas: CanvasMeta }) {
   return (
     <>
       <div
+        role="button"
+        tabIndex={0}
         draggable={!editing}
         onDragStart={(e) => {
           e.dataTransfer.setData("application/x-cadanraw-board", canvas.id);
+          e.dataTransfer.setData("text/plain", canvas.name);
           e.dataTransfer.effectAllowed = "move";
         }}
         onDoubleClick={startRename}
-        onClick={() => !editing && openCanvas(canvas.id)}
+        onClick={() => !editing && void openBoard(canvas.id)}
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return;
+          if (e.key === "Enter") void openBoard(canvas.id);
+          if (e.key === "F2") startRename();
+        }}
         onContextMenu={onContextMenu}
-        className={`group relative flex cursor-default flex-col gap-0.5 rounded-lg px-2.5 py-2 transition-colors ${
-          isActive ? "bg-accent-soft" : "hover:bg-raised"
-        }`}
+        className={`sb-board ${isActive ? "is-active" : ""}`}
       >
         {editing ? (
           <input
             autoFocus
             value={draft}
+            maxLength={200}
+            onFocus={(e) => e.target.select()}
             onChange={(e) => setDraft(e.target.value)}
             onBlur={commitRename}
             onKeyDown={onEditKey}
             onClick={(e) => e.stopPropagation()}
             spellCheck={false}
-            className="w-full rounded border border-accent/50 bg-base px-1 py-0.5 text-[13px] text-ink outline-none"
+            aria-label="Board name"
           />
         ) : (
-          <div className="flex items-center gap-1.5">
-            {canvas.isPinned && (
-              <svg
-                width="10"
-                height="10"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                className="shrink-0 text-accent"
-                aria-label="Pinned"
-              >
-                <path d="M16 3l5 5-3 1-3 5 1 3-3-1-4 4-1-4-4-1 4-4-1-3 5-3 1-3z" />
-              </svg>
-            )}
-            <span
-              className={`truncate text-[13px] font-medium ${
-                isActive ? "text-ink" : "text-ink-dim group-hover:text-ink"
-              }`}
-            >
-              {canvas.name}
-            </span>
-          </div>
+          <span className="sb-board-name">
+            <span>{canvas.name}</span>
+            {canvas.isPinned && <Pin size={11} aria-label="Pinned" />}
+          </span>
         )}
-
-        <span className="truncate font-mono text-[10.5px] text-ink-muted">
-          {pluralize(canvas.elementCount, "element")} ·{" "}
-          {formatRelativeTime(canvas.updatedAt)}
-        </span>
+        <span className="sb-board-meta">{formatRelativeTime(canvas.updatedAt)}</span>
       </div>
 
       {menu && (
@@ -103,26 +86,11 @@ export default function CanvasListItem({ canvas }: { canvas: CanvasMeta }) {
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
-          items={[
-            {
-              label: canvas.isPinned ? "Unpin" : "Pin to top",
-              onClick: () => togglePin(canvas.id),
-            },
-            { label: "Rename", onClick: startRename },
-            {
-              label: "Move to folder…",
-              onClick: () => setMovingCanvas(canvas.id),
-            },
-            { label: "Duplicate", onClick: () => duplicateCanvas(canvas.id) },
-            { label: "Export…", onClick: () => requestExport(canvas.id) },
-            {
-              label: "Delete",
-              danger: true,
-              onClick: () => requestDelete(canvas.id),
-            },
-          ]}
+          items={boardMenuItems(canvas, { onRename: startRename })}
         />
       )}
     </>
   );
 }
+
+export default memo(CanvasListItem);

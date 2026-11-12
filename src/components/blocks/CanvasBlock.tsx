@@ -9,6 +9,8 @@ import { useEffect, useState, useRef } from "react";
 import type { BlockData } from "../../lib/blocks";
 import { youtubeId } from "../../lib/blocks";
 import { forwardBlockWheel } from "../../lib/canvas-surface";
+import { celebrate } from "../../lib/celebrate";
+import { sfx } from "../../lib/sound";
 
 export default function CanvasBlock({
   data,
@@ -105,7 +107,9 @@ export default function CanvasBlock({
           onChange={(title) => edit({ title })}
         />
         {data.kind === "checklist" && (
-          <span className="block-progress">
+          <span
+            className={`block-progress ${data.items.length > 0 && data.items.every((i) => i.done) ? "is-complete" : ""}`}
+          >
             {data.items.filter((i) => i.done).length}/{data.items.length}
           </span>
         )}
@@ -166,13 +170,17 @@ export default function CanvasBlock({
                 type="checkbox"
                 checked={item.done}
                 disabled={readOnly}
-                onChange={(e) =>
-                  edit({
-                    items: data.items.map((i) =>
-                      i.id === item.id ? { ...i, done: e.target.checked } : i,
-                    ),
-                  })
-                }
+                onChange={(e) => {
+                  const items = data.items.map((i) =>
+                    i.id === item.id ? { ...i, done: e.target.checked } : i,
+                  );
+                  edit({ items });
+                  if (!e.target.checked) return;
+                  // The last box of a real list earns a little ceremony.
+                  if (items.length > 1 && items.every((i) => i.done))
+                    celebrate(e.target);
+                  else sfx.tick();
+                }}
               />
               <BlockField
                 label="Checklist item"

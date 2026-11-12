@@ -55,12 +55,9 @@ export default function BoardPreview({
           preserveAspectRatio="xMidYMid meet"
         >
           {visible.map((e) => {
-            const color =
-              e.stroke === "transparent"
-                ? "#9cb2c6"
-                : e.stroke === "#1e1e1e"
-                  ? "#b0c2d4"
-                  : e.stroke;
+            // Default ink and unset strokes follow the theme; chosen colours stay.
+            const themed = e.stroke === "transparent" || e.stroke === "#1e1e1e";
+            const color = themed ? "var(--text-dim)" : e.stroke;
             if (e.kind)
               return (
                 <g key={e.id}>
@@ -70,13 +67,12 @@ export default function BoardPreview({
                     width={e.width}
                     height={e.height}
                     rx={Math.min(e.width, e.height) * 0.06}
-                    fill={e.kind === "note" ? "#293a4c" : "#1c2936"}
-                    stroke="#7189a333"
+                    className={e.kind === "note" ? "preview-note" : "preview-block"}
                   />
                   <text
                     x={e.x + e.width * 0.06}
                     y={e.y + e.height * 0.15}
-                    fill="#d8e2ed"
+                    className="preview-title"
                     fontSize={Math.min(e.width * 0.07, e.height * 0.12)}
                   >
                     {e.text?.slice(0, 28)}
@@ -89,7 +85,7 @@ export default function BoardPreview({
                   key={e.id}
                   x={e.x}
                   y={e.y + Math.min(e.height, 24)}
-                  fill={color}
+                  style={{ fill: color }}
                   fontSize={Math.min(e.height, 24)}
                 >
                   {e.text?.split("\n")[0]}
@@ -103,7 +99,7 @@ export default function BoardPreview({
                     .map((p) => `${e.x + p[0]},${e.y + p[1]}`)
                     .join(" ")}
                   fill="none"
-                  stroke={color}
+                  style={{ stroke: color }}
                   strokeWidth={2}
                   vectorEffect="non-scaling-stroke"
                 />
@@ -117,7 +113,7 @@ export default function BoardPreview({
                   rx={e.width / 2}
                   ry={e.height / 2}
                   fill={e.background}
-                  stroke={color}
+                  style={{ stroke: color }}
                   vectorEffect="non-scaling-stroke"
                 />
               );
@@ -129,8 +125,9 @@ export default function BoardPreview({
                 width={e.width}
                 height={e.height}
                 rx={8}
-                fill={e.type === "image" ? "#293541" : e.background}
-                stroke={color}
+                fill={e.type === "image" ? undefined : e.background}
+                className={e.type === "image" ? "preview-image" : undefined}
+                style={{ stroke: color }}
                 vectorEffect="non-scaling-stroke"
               />
             );
@@ -139,7 +136,7 @@ export default function BoardPreview({
       ) : (
         <div className="preview-empty">
           <LayoutTemplate size={23} strokeWidth={1.2} />
-          <span>{elements ? "Room for an idea" : "Loading preview"}</span>
+          <span>{elements ? "Empty board" : ""}</span>
         </div>
       )}
     </div>

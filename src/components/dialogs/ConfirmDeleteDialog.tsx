@@ -13,23 +13,24 @@ export default function ConfirmDeleteDialog() {
 
   return (
     <Modal open={!!pendingId} onClose={cancel}>
-      <h2 className="mb-2 text-[15px] font-semibold text-ink">Delete canvas</h2>
-      <p className="text-[13px] leading-relaxed text-ink-dim">
-        <span className="text-ink">“{canvas?.name}”</span> will be moved to the
-        Trash
+      <h2 className="dialog-title">Delete this board?</h2>
+      <p className="dialog-text">
+        <strong>“{canvas?.name}”</strong> will be moved to the Trash, where you
+        can still get it back
         {canvas && canvas.elementCount > 0
           ? ` — it has ${pluralize(canvas.elementCount, "element")}.`
           : "."}
       </p>
-      <div className="mt-4 flex justify-end gap-2">
+      <div className="dialog-actions">
         <Button type="button" onClick={cancel}>
           Cancel
         </Button>
         <Button
           variant="danger"
+          autoFocus
           onClick={() => pendingId && deleteCanvas(pendingId)}
         >
-          Delete
+          Move to Trash
         </Button>
       </div>
     </Modal>

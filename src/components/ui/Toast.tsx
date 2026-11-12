@@ -1,34 +1,28 @@
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
+import { AlertCircle, Check } from "lucide-react";
 import { useStore } from "../../store/excaliStore";
+import { spring } from "../../lib/motion";
 
 export default function Toast() {
   const toasts = useStore((s) => s.toasts);
   const dismiss = useStore((s) => s.dismissToast);
 
   return createPortal(
-    <div className="pointer-events-none fixed bottom-12 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2">
+    <div className="toast-stack" role="status" aria-live="polite">
       <AnimatePresence>
         {toasts.map((t) => (
           <motion.button
             key={t.id}
             layout
-            initial={{ opacity: 0, y: 12, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.96 }}
-            transition={{ duration: 0.16 }}
+            initial={{ opacity: 0, y: 16, scale: 0.92, filter: "blur(6px)" }}
+            animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+            exit={{ opacity: 0, y: 6, scale: 0.96, filter: "blur(4px)", transition: { duration: 0.14 } }}
+            transition={spring}
             onClick={() => dismiss(t.id)}
-            className={`pointer-events-auto flex items-center gap-2 rounded-lg border px-3.5 py-2 text-[13px] shadow-xl backdrop-blur ${
-              t.type === "error"
-                ? "border-red-500/30 bg-red-500/15 text-red-200"
-                : "border-edge bg-overlay text-ink"
-            }`}
+            className={`toast ${t.type === "error" ? "is-error" : ""}`}
           >
-            <span
-              className={`h-1.5 w-1.5 rounded-full ${
-                t.type === "error" ? "bg-red-400" : "bg-accent"
-              }`}
-            />
+            {t.type === "error" ? <AlertCircle size={14} /> : <Check size={14} strokeWidth={2.4} />}
             {t.message}
           </motion.button>
         ))}

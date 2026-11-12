@@ -22,7 +22,7 @@ export default function VersionListItem({ version }: { version: VersionMeta }) {
         onClick={() => preview(version.id)}
         onContextMenu={onContextMenu}
         className={`group flex cursor-default flex-col gap-0.5 rounded-lg px-2.5 py-1.5 transition-colors ${
-          isPreviewing ? "bg-accent-soft" : "hover:bg-raised"
+          isPreviewing ? "bg-accent-soft" : "hover:bg-fill"
         }`}
       >
         <span

@@ -28,8 +28,8 @@ export default function SaveVersionDialog() {
   return (
     <Modal open={open} onClose={close}>
       <form onSubmit={submit}>
-        <h2 className="mb-1 text-[15px] font-semibold text-ink">Save a version</h2>
-        <p className="mb-3 text-[12px] leading-relaxed text-ink-dim">
+        <h2 className="dialog-title">Save a version</h2>
+        <p className="dialog-text">
           A snapshot you can return to anytime. Labelled versions are kept
           permanently; leave it blank for a quick checkpoint.
         </p>
@@ -40,7 +40,7 @@ export default function SaveVersionDialog() {
           placeholder="Label (optional)"
           spellCheck={false}
         />
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="dialog-actions">
           <Button type="button" onClick={close}>
             Cancel
           </Button>

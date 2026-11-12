@@ -1,14 +1,17 @@
 import { useState, type MouseEvent } from "react";
-import SidebarHeader from "./SidebarHeader";
+import { Import, Plus } from "lucide-react";
 import CanvasList from "./CanvasList";
 import VersionHistory from "./VersionHistory";
 import { useStore } from "../../store/excaliStore";
+import { mod } from "../../lib/platform";
 
-export default function Sidebar() {
-  const homeOpen=useStore(s=>s.homeOpen);
-  const open = useStore((s) => s.sidebarOpen);
+export default function Sidebar({ hidden = false }: { hidden?: boolean }) {
+  const homeOpen = useStore((s) => s.homeOpen);
+  const open = useStore((s) => s.sidebarOpen) && !hidden;
   const width = useStore((s) => s.sidebarWidth);
   const setWidth = useStore((s) => s.setSidebarWidth);
+  const openNew = useStore((s) => s.openNewCanvasDialog);
+  const importFiles = useStore((s) => s.importFiles);
   const [dragging, setDragging] = useState(false);
 
   // Drag the right edge to resize. The width transition is suppressed mid-drag
@@ -33,20 +36,34 @@ export default function Sidebar() {
 
   return (
     <aside
-      className="relative shrink-0 overflow-hidden"
+      className="sidebar relative shrink-0 overflow-hidden"
       style={{
         width: open ? width : 0,
-        transition: dragging
-          ? "none"
-          : "width 240ms cubic-bezier(0.22, 1, 0.36, 1)",
+        transition: dragging ? "none" : "width 300ms var(--ease-out)",
       }}
+      aria-hidden={!open}
     >
       {/* Inner pane keeps the full width so content slides/clips instead of squishing. */}
       <div
-        className="flex h-full flex-col border-r border-edge bg-base transition-opacity duration-200"
+        className="sidebar-pane"
         style={{ width, opacity: open ? 1 : 0 }}
+        {...(open ? {} : { inert: "" })}
       >
-        <SidebarHeader />
+        <div className="sidebar-top">
+          <button className="sb-new press no-drag" onClick={openNew}>
+            <Plus size={15} strokeWidth={2.2} />
+            <span>New board</span>
+            <kbd>{mod("N")}</kbd>
+          </button>
+          <button
+            className="sb-icon press no-drag"
+            aria-label="Import an Excalidraw file"
+            title={`Import an Excalidraw file (${mod("O")})`}
+            onClick={() => void importFiles()}
+          >
+            <Import size={15} />
+          </button>
+        </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           <CanvasList />
         </div>
@@ -56,8 +73,9 @@ export default function Sidebar() {
       {open && (
         <div
           onMouseDown={startResize}
-          className="absolute right-0 top-0 z-10 h-full w-1.5 cursor-col-resize transition-colors hover:bg-accent/25"
-          title="Drag to resize"
+          onDoubleClick={() => setWidth(248)}
+          className="sidebar-resizer"
+          title="Drag to resize · double-click to reset"
         />
       )}
     </aside>

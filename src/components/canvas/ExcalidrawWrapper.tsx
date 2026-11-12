@@ -5,12 +5,17 @@ import {
   hashElementsVersion,
 } from "@excalidraw/excalidraw";
 import type {
+  AppState,
   ExcalidrawImperativeAPI,
   LibraryItems,
 } from "@excalidraw/excalidraw/types";
 import "@excalidraw/excalidraw/index.css";
 
 import { syncDotGrid } from "../../lib/canvas-surface";
+import { canvasPointer } from "../../lib/canvas-pointer";
+import { loadView, saveView, type BoardView } from "../../lib/viewport";
+import { themeById } from "../../lib/themes";
+import { usePrefs } from "../../store/prefs";
 import { embedImageIntoCanvas } from "../../lib/images";
 import CanvasBlock from "../blocks/CanvasBlock";
 import {
@@ -64,13 +69,18 @@ interface ExcalidrawWrapperProps {
   viewMode?: boolean;
   libraryItems?: LibraryItems;
   onLibraryChange?: (items: LibraryItems) => void;
+  /** Board id: where you were looking is remembered under it. */
+  viewKey?: string;
+  /** Controls for Excalidraw's top-right slot (Insert, Share). */
+  topRight?: () => JSX.Element;
 }
 
 /**
  * Thin wrapper around the official Excalidraw editor. Parent remounts this with
  * key={canvasId}, so a fresh editor is created per canvas (no scroll/selection
  * leakage between canvases). The drawing engine is Excalidraw's job; the app
- * shell (files, persistence, versions) lives around it. Dark theme is forced.
+ * shell (files, persistence, versions) lives around it. Light or dark follows
+ * the app theme; the board's background pattern follows the grid preference.
  */
 export default function ExcalidrawWrapper({
   json,
@@ -80,17 +90,56 @@ export default function ExcalidrawWrapper({
   viewMode = false,
   libraryItems,
   onLibraryChange,
+  viewKey,
+  topRight,
 }: ExcalidrawWrapperProps) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const scheme = usePrefs((s) => themeById(s.theme).scheme);
+  const grid = usePrefs((s) => s.grid);
+
+  // Reopen a board where you left it; a board with no remembered view (new,
+  // imported, from a template) is fitted to its content once it has loaded.
+  const savedView = useMemo(() => (viewKey ? loadView(viewKey) : null), [viewKey]);
+  const view = useRef<BoardView | null>(null);
+  const fitPending = useRef(!savedView);
+  useEffect(() => {
+    if (!viewKey || viewMode) return;
+    const remember = () => {
+      if (view.current) saveView(viewKey, view.current);
+    };
+    window.addEventListener("blur", remember);
+    window.addEventListener("beforeunload", remember);
+    return () => {
+      remember();
+      window.removeEventListener("blur", remember);
+      window.removeEventListener("beforeunload", remember);
+    };
+  }, [viewKey, viewMode]);
 
   const initialData = useMemo(
     () =>
       loadFromBlob(new Blob([json], { type: "application/json" }), null, null)
+        .then((scene) => {
+          // Only content that was already there gets fitted; never jump the
+          // view under someone drawing their first shape on an empty board.
+          if (!scene.elements?.length) fitPending.current = false;
+          return scene;
+        })
         .then((scene) => ({
           ...scene,
           elements: normalizeBlockElements(scene.elements ?? []),
-          appState: { ...scene.appState, viewBackgroundColor: "transparent" },
+          appState: {
+            ...scene.appState,
+            viewBackgroundColor: "transparent",
+            ...(savedView
+              ? {
+                  scrollX: savedView.scrollX,
+                  scrollY: savedView.scrollY,
+                  zoom: { value: savedView.zoom as AppState["zoom"]["value"] },
+                }
+              : {}),
+          },
           libraryItems,
         }))
         .catch(() => ({
@@ -158,7 +207,17 @@ export default function ExcalidrawWrapper({
   }, [viewMode]);
 
   return (
-    <div className="h-full w-full dot-surface" ref={surfaceRef}>
+    <div
+      className="h-full w-full dot-surface"
+      ref={surfaceRef}
+      data-grid={grid}
+      onPointerMove={(e) => {
+        canvasPointer.point = { clientX: e.clientX, clientY: e.clientY };
+      }}
+      onPointerLeave={() => {
+        canvasPointer.point = null;
+      }}
+    >
       <Excalidraw
         excalidrawAPI={(api) => {
           apiRef.current = api;
@@ -191,11 +250,30 @@ export default function ExcalidrawWrapper({
           ) : null;
         }}
         initialData={initialData}
-        theme="dark"
+        theme={scheme}
+        renderTopRightUI={topRight}
         onPointerUpdate={(payload) => onPointerUpdate?.(payload.pointer)}
         viewModeEnabled={viewMode}
         onChange={(elements, state) => {
           syncDotGrid(surfaceRef.current, state);
+          view.current = {
+            scrollX: state.scrollX,
+            scrollY: state.scrollY,
+            zoom: state.zoom.value,
+          };
+          if (fitPending.current && elements.length) {
+            fitPending.current = false;
+            // After this change has been committed (a timer, not a frame, so
+            // it also happens while the window is hidden).
+            setTimeout(() =>
+              apiRef.current?.scrollToContent(undefined, {
+                fitToViewport: true,
+                viewportZoomFactor: 0.8,
+                maxZoom: 1,
+                animate: false,
+              }),
+            );
+          }
           if (!viewMode) onSceneChange?.(hashElementsVersion(elements));
         }}
         onLibraryChange={onLibraryChange}

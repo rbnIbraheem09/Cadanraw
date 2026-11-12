@@ -1,7 +1,7 @@
 {
   "name": "cadanraw",
   "productName": "Cadanraw",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Cadanraw — a local-first whiteboard app powered by Excalidraw",
   "private": true,
   "main": "dist-electron/main.js",
@@ -16,6 +16,7 @@
     "copy:fonts": "node scripts/copy-excalidraw-fonts.mjs",
     "make:icon": "electron scripts/make-icon.cjs",
     "smoke:db": "electron scripts/smoke-db.cjs",
+    "smoke:ui": "npm run build:electron && electron scripts/smoke-ui.cjs",
     "postinstall": "node scripts/copy-excalidraw-fonts.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "test": "node scripts/test-with-abi.mjs",

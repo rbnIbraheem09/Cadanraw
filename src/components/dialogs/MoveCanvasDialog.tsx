@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Modal from "../ui/Modal";
+import Button from "../ui/Button";
 import { useStore } from "../../store/excaliStore";
 import { folderPath } from "../../lib/folders";
 export default function MoveCanvasDialog() {
@@ -17,16 +18,19 @@ export default function MoveCanvasDialog() {
     <Modal open={!!id} onClose={() => close(null)}>
       <h2 className="dialog-title">Move board</h2>
       <form
-        className="library-form"
+        className="dialog-form"
         onSubmit={(e) => {
           e.preventDefault();
           void move(id, target || null);
         }}
       >
-        <p>Choose a folder for “{boards.find((b) => b.id === id)?.name}”.</p>
-        <label htmlFor="move-folder">Destination</label>
+        <p className="dialog-text">
+          Choose a folder for “{boards.find((b) => b.id === id)?.name}”.
+        </p>
         <select
           id="move-folder"
+          className="field"
+          aria-label="Destination folder"
           autoFocus
           value={target}
           onChange={(e) => setTarget(e.target.value)}
@@ -44,11 +48,13 @@ export default function MoveCanvasDialog() {
               </option>
             ))}
         </select>
-        <div className="library-form-actions">
-          <button type="button" onClick={() => close(null)}>
+        <div className="dialog-actions">
+          <Button type="button" onClick={() => close(null)}>
             Cancel
-          </button>
-          <button className="panel-primary">Move board</button>
+          </Button>
+          <Button type="submit" variant="primary">
+            Move board
+          </Button>
         </div>
       </form>
     </Modal>

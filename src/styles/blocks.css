@@ -1,0 +1,679 @@
+/* ─── Rich blocks (note, checklist, table, calendar, link, kanban, file, board)
+   Each block is an Excalidraw embeddable, so it moves, resizes and undoes like
+   a native shape. Colours come from the theme; a tone tints the card. */
+.canvas-block {
+  --tone: var(--card);
+  --block-bg: color-mix(in srgb, var(--tone) var(--tone-mix), var(--card));
+  --block-raised: color-mix(in srgb, var(--text) 5%, var(--block-bg));
+  --block-inset: color-mix(in srgb, var(--void) 55%, var(--block-bg));
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 22px;
+  gap: 14px;
+  background: var(--block-bg);
+  color: var(--card-text);
+  border: 1px solid var(--card-line);
+  border-radius: 22px;
+  overflow: hidden;
+  font-family: "Hanken Grotesk", sans-serif;
+  text-align: left;
+  user-select: text;
+  box-sizing: border-box;
+}
+.tone-charcoal {
+  --tone: var(--card);
+}
+.tone-slate {
+  --tone: #88b7e9;
+}
+.tone-sage {
+  --tone: #87cdb2;
+}
+.tone-sand {
+  --tone: #e2cd82;
+}
+.tone-rose {
+  --tone: #dfa0b8;
+}
+.tone-peach {
+  --tone: #e6ac91;
+}
+.tone-lavender {
+  --tone: #b8a6e8;
+}
+.excalidraw .canvas-block.tone-slate {
+  border-color: color-mix(in srgb, var(--tone) 30%, transparent);
+}
+
+.canvas-block button {
+  cursor: pointer;
+}
+.canvas-block button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.canvas-block :focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.canvas-block small {
+  font-size: 11px;
+  color: var(--card-text-3);
+}
+
+/* Excalidraw supplies form styles too; keep block editors on the card surface. */
+.canvas-block input,
+.canvas-block textarea,
+.excalidraw .canvas-block input:not([type="checkbox"]),
+.excalidraw .canvas-block textarea {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  width: 100%;
+  min-width: 0;
+  outline: none;
+  padding: 2px 0;
+}
+.canvas-block input::placeholder,
+.canvas-block textarea::placeholder {
+  color: var(--card-text-3);
+}
+.excalidraw .canvas-block textarea {
+  flex: 1;
+  resize: none;
+  min-height: 40px;
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--card-text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* Text is edited in place: the hit area follows the text, the rest drags. */
+.excalidraw .canvas-block .block-text-field {
+  display: inline-grid;
+  grid-template-columns: minmax(0, 1fr);
+  flex: 0 1 auto;
+  width: max-content;
+  min-width: 2ch;
+  max-width: 100%;
+  vertical-align: top;
+  font-size: 16px;
+  line-height: 1.65;
+}
+.excalidraw .canvas-block .block-text-field > * {
+  grid-area: 1/1;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 2px 0;
+  margin: 0;
+  font: inherit;
+  letter-spacing: inherit;
+}
+.excalidraw .canvas-block .block-field-measure {
+  visibility: hidden;
+  white-space: pre;
+  pointer-events: none;
+  padding-right: 3px;
+}
+.excalidraw .canvas-block .block-text-field.is-multiline {
+  width: fit-content;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.excalidraw .canvas-block .is-multiline .block-field-measure {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.excalidraw .canvas-block .block-text-field.is-title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.3;
+  max-width: 100%;
+}
+.excalidraw .canvas-block .block-text-field :is(input, textarea),
+.excalidraw .canvas-block .block-text-field :is(input, textarea):focus,
+.excalidraw .canvas-block .block-text-field :is(input, textarea):focus-visible {
+  width: 100%;
+  height: 100%;
+  resize: none;
+  background-color: transparent;
+  border: none;
+  border-bottom: none;
+  color: inherit;
+  outline: none;
+  box-shadow: none;
+  border-radius: 3px;
+}
+.excalidraw .canvas-block .block-text-field textarea {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  min-height: 1.65em;
+}
+
+/* Heading row */
+.block-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+.excalidraw .canvas-block .block-heading {
+  min-width: 0;
+  justify-content: space-between;
+}
+.block-heading input {
+  flex: 1;
+}
+.block-progress {
+  font-size: 13px;
+  color: var(--card-text-3);
+  font-variant-numeric: tabular-nums;
+  transition: color var(--dur) ease;
+}
+.excalidraw .canvas-block .block-heading .block-progress {
+  margin-left: 10px;
+  flex-shrink: 0;
+}
+.block-progress.is-complete {
+  color: var(--positive);
+}
+.block-meta {
+  font-size: 12px;
+  color: var(--card-text-3);
+  margin: 0 0 12px;
+}
+.block-scroll {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+.excalidraw .canvas-block .block-scroll {
+  pointer-events: none;
+}
+.block-add {
+  text-align: left;
+  color: var(--card-text-3);
+  padding: 10px 0;
+  font-size: 14px;
+}
+.excalidraw .canvas-block .block-add {
+  align-self: flex-start;
+}
+.excalidraw .canvas-block .block-table-actions button:hover,
+.excalidraw .canvas-block .block-add:hover {
+  color: var(--card-text);
+}
+
+/* Note */
+.excalidraw .canvas-block .note-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--card-text-2);
+}
+.dot-surface[data-block-controls="true"] .canvas-block .note-body:focus-within {
+  overflow-y: auto;
+  pointer-events: auto;
+}
+.note-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: auto;
+  font-size: 12px;
+  color: var(--card-text-3);
+}
+.block-colors {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  padding: 5px 2px;
+  margin: 0;
+}
+.excalidraw .canvas-block .swatch {
+  width: 13px;
+  height: 13px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--tone);
+  transition: transform 320ms var(--ease-spring);
+}
+.excalidraw .canvas-block .swatch:hover {
+  transform: scale(1.25);
+}
+.swatch[aria-pressed="true"] {
+  outline: 2px solid var(--card-text-3);
+  outline-offset: 2px;
+}
+
+/* Checklist */
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0;
+  min-height: 32px;
+}
+.excalidraw .canvas-block .check-row input[type="checkbox"] {
+  appearance: none;
+  width: 21px;
+  height: 21px;
+  padding: 0;
+  flex-shrink: 0;
+  border: 1.5px solid var(--card-line-strong);
+  border-radius: 50%;
+  background: transparent;
+  position: relative;
+  cursor: pointer;
+  transition:
+    background-color var(--dur) ease,
+    border-color var(--dur) ease,
+    transform 380ms var(--ease-spring);
+}
+.excalidraw .canvas-block .check-row input[type="checkbox"]:hover {
+  border-color: var(--positive);
+}
+.excalidraw .canvas-block .check-row input[type="checkbox"]:active {
+  transform: scale(0.86);
+}
+.excalidraw .canvas-block .check-row input[type="checkbox"]:checked {
+  background: var(--positive);
+  border-color: var(--positive);
+}
+.excalidraw .canvas-block .check-row input[type="checkbox"]:checked::after {
+  content: "✓";
+  position: absolute;
+  inset: 0;
+  color: var(--positive-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  animation: tick-pop 340ms var(--ease-spring);
+}
+.excalidraw .canvas-block .check-row input {
+  font-size: 16px;
+}
+.excalidraw .canvas-block .check-row .block-text-field {
+  max-width: calc(100% - 72px);
+  transition: color var(--dur) ease;
+}
+.excalidraw
+  .canvas-block
+  .check-row:has(input:checked)
+  > .block-text-field {
+  color: var(--card-text-3);
+}
+.excalidraw .canvas-block .check-row > button {
+  margin-left: auto;
+  padding: 3px;
+  color: var(--card-text-3);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.excalidraw .canvas-block .check-row:hover > button,
+.excalidraw .canvas-block .check-row:focus-within > button {
+  opacity: 1;
+}
+
+/* Table */
+.canvas-block table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.excalidraw .canvas-block td {
+  border-bottom: 1px solid var(--card-line);
+  padding: 12px 6px;
+  min-width: 90px;
+  max-width: 220px;
+}
+.canvas-block td:last-child {
+  min-width: 16px;
+}
+.excalidraw .canvas-block tr:first-child {
+  color: var(--card-text-3);
+  font-weight: 600;
+}
+.excalidraw .canvas-block td input {
+  font-size: 14px;
+}
+.excalidraw .canvas-block .block-table-actions {
+  display: flex;
+  gap: 20px;
+  font-size: 13px;
+  color: var(--card-text-3);
+  padding: 18px 6px 14px;
+}
+
+/* Calendar */
+.calendar-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 15px;
+}
+.calendar-nav button {
+  padding: 4px 10px;
+  font-size: 24px;
+}
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+.calendar-grid small {
+  color: var(--card-text-3);
+  text-align: center;
+  font-size: 12px;
+}
+.calendar-grid button {
+  position: relative;
+  min-height: 32px;
+  padding: 4px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+.calendar-grid button:hover {
+  background: var(--fill-3);
+}
+.calendar-grid button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.calendar-grid .today {
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+.event-dot {
+  position: absolute;
+  bottom: 2px;
+  left: calc(50% - 2px);
+  width: 4px;
+  height: 4px;
+  background: var(--positive);
+  border-radius: 50%;
+}
+
+/* Link */
+.link-preview {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--block-inset);
+}
+.link-preview iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.link-play {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.link-play img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.65;
+  transition:
+    opacity var(--dur) ease,
+    transform 600ms var(--ease-out);
+}
+.link-play:hover img {
+  opacity: 0.85;
+  transform: scale(1.03);
+}
+.link-play span {
+  position: absolute;
+  background: color-mix(in srgb, var(--block-inset) 90%, transparent);
+  color: var(--card-text);
+  padding: 9px 14px;
+  border: 1px solid var(--card-line-strong);
+  border-radius: 6px;
+  font-size: 15px;
+}
+.link-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--card-text-3);
+  gap: 12px;
+  padding-top: 2px;
+}
+.link-bottom span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.link-bottom button:hover {
+  color: var(--card-text);
+}
+
+/* Kanban */
+.excalidraw .canvas-block .kanban-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  pointer-events: none;
+}
+.dot-surface[data-block-controls="true"] .canvas-block .kanban-scroll {
+  pointer-events: auto;
+}
+.excalidraw .canvas-block .kanban-columns {
+  display: flex;
+  gap: 16px;
+  min-height: 100%;
+  align-items: stretch;
+}
+.excalidraw .canvas-block .kanban-column {
+  flex: 1 0 210px;
+  min-width: 0;
+  padding: 0 2px;
+  pointer-events: none;
+}
+.excalidraw .canvas-block .kanban-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0 14px;
+}
+.excalidraw .canvas-block .kanban-heading .block-text-field {
+  font-size: 14px;
+  font-weight: 500;
+}
+.excalidraw .canvas-block .kanban-heading small {
+  color: var(--card-text-3);
+  font-size: 11px;
+}
+.kanban-dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--card-text-3);
+}
+.kanban-dot.stage-1 {
+  background: #d6ba7a;
+}
+.kanban-dot.stage-2 {
+  background: var(--positive);
+}
+.excalidraw .canvas-block .kanban-task {
+  padding: 13px 12px 7px;
+  margin-bottom: 9px;
+  background: var(--block-raised);
+  border: 1px solid var(--card-line);
+  border-radius: 10px;
+}
+.excalidraw .canvas-block .kanban-task .block-text-field {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.excalidraw .canvas-block .task-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 7px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.excalidraw .canvas-block .task-actions span {
+  flex: 1;
+}
+.excalidraw .canvas-block .task-actions button {
+  padding: 4px;
+  border-radius: 4px;
+  color: var(--card-text-3);
+}
+.excalidraw .canvas-block .task-actions button:hover {
+  background: var(--fill-2);
+  color: var(--card-text);
+}
+.excalidraw .canvas-block .task-actions button:disabled {
+  opacity: 0.25;
+}
+.excalidraw .canvas-block .kanban-task:hover .task-actions,
+.excalidraw .canvas-block .kanban-task:focus-within .task-actions {
+  opacity: 1;
+}
+.excalidraw .canvas-block .kanban-add-column {
+  align-self: flex-start;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--card-text-3);
+  padding: 7px 4px;
+}
+.excalidraw .canvas-block .kanban-column .block-add {
+  font-size: 13px;
+}
+.excalidraw .canvas-block .quiet-remove {
+  margin-left: auto;
+  color: var(--card-text-3);
+  opacity: 0;
+}
+.excalidraw .canvas-block .kanban-heading:hover .quiet-remove,
+.excalidraw .canvas-block .kanban-heading:focus-within .quiet-remove {
+  opacity: 1;
+}
+.excalidraw
+  .canvas-block
+  .kanban-scroll[data-task-dragging="true"]
+  .kanban-column {
+  pointer-events: auto;
+}
+.excalidraw
+  .canvas-block
+  .kanban-scroll[data-task-dragging="true"]
+  .kanban-column:hover {
+  background: var(--fill);
+  border-radius: 8px;
+}
+.excalidraw .canvas-block .task-drag-handle {
+  cursor: grab;
+  touch-action: none;
+}
+.excalidraw .canvas-block .task-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* Attachment + board reference */
+.excalidraw .canvas-block .attachment-summary,
+.excalidraw .canvas-block .board-reference {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  color: var(--card-text-3);
+}
+.excalidraw .canvas-block :is(.attachment-summary, .board-reference) > svg {
+  flex-shrink: 0;
+}
+.excalidraw .canvas-block :is(.attachment-summary, .board-reference) > div {
+  min-width: 0;
+}
+.excalidraw .canvas-block :is(.attachment-summary, .board-reference) strong {
+  display: block;
+  color: var(--card-text);
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.excalidraw .canvas-block :is(.attachment-summary, .board-reference) small {
+  display: block;
+  color: var(--card-text-3);
+  font-size: 11px;
+  line-height: 1.6;
+  margin-top: 5px;
+}
+.excalidraw .canvas-block .attachment-caption {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.excalidraw .canvas-block .attachment-caption .block-text-field {
+  font-size: 14px;
+}
+.excalidraw .canvas-block .block-resource-actions {
+  display: flex;
+  gap: 16px;
+  margin-top: auto;
+}
+.excalidraw .canvas-block .block-resource-actions button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--card-text-2);
+  font-size: 12px;
+  padding: 5px 0;
+}
+.excalidraw .canvas-block .block-resource-actions button:hover {
+  color: var(--card-text);
+}
+.excalidraw .canvas-block .block-file-input {
+  display: none;
+}
+.excalidraw .canvas-block .block-board-select {
+  background: var(--block-raised);
+  border: 1px solid var(--card-line-strong);
+  border-radius: 6px;
+  color: var(--card-text-2);
+  padding: 8px;
+  width: 100%;
+  font: inherit;
+  font-size: 12px;
+}
+.excalidraw .canvas-block .block-inline-error {
+  color: var(--danger);
+  font-size: 12px;
+}
+
+/* A finished checklist gets a small burst (lib/celebrate.ts). */
+.confetti-bit {
+  position: fixed;
+  z-index: 200;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  pointer-events: none;
+  will-change: transform, opacity;
+}

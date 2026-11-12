@@ -6,6 +6,8 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { useLayer } from "../../hooks/useLayer";
+
 export interface ContextMenuItem {
   label: string;
   onClick: () => void;
@@ -28,6 +30,7 @@ export default function ContextMenu({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [point, setPoint] = useState({ left: x, top: y });
+  useLayer(true, onClose);
   useLayoutEffect(() => {
     const rect = ref.current?.getBoundingClientRect();
     if (rect)
@@ -37,20 +40,26 @@ export default function ContextMenu({
       });
   }, [x, y, items.length]);
   useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
     ref.current
       ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
-      ?.focus();
+      ?.focus({ preventScroll: true });
     const close = (e: PointerEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose();
     };
     const blur = () => onClose();
-    window.addEventListener("pointerdown", close);
+    window.addEventListener("pointerdown", close, true);
     window.addEventListener("blur", blur);
     window.addEventListener("resize", blur);
     return () => {
-      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("pointerdown", close, true);
       window.removeEventListener("blur", blur);
       window.removeEventListener("resize", blur);
+      // Hand focus back, unless the chosen action already moved it (a rename
+      // field, a dialog).
+      const now = document.activeElement;
+      if (previous?.isConnected && (!now || now === document.body))
+        previous.focus({ preventScroll: true });
     };
   }, [onClose]);
   return createPortal(
@@ -58,7 +67,7 @@ export default function ContextMenu({
       ref={ref}
       role="menu"
       aria-label="Actions"
-      className="cadanraw-context-menu"
+      className="cadanraw-context-menu pop-enter"
       style={point}
       onContextMenu={(e) => e.preventDefault()}
       onKeyDown={(e) => {
@@ -68,7 +77,7 @@ export default function ContextMenu({
           ) || [],
         );
         const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
-        if (e.key === "Escape" || e.key === "Tab") {
+        if (e.key === "Tab") {
           e.preventDefault();
           onClose();
           return;

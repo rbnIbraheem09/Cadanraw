@@ -3,7 +3,7 @@ module.exports = {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {
     extend: {
-      // Single source of truth lives in src/index.css (:root CSS variables).
+      // Single source of truth lives in src/styles/tokens.css (CSS variables).
       // These keys just expose semantic utilities (bg-surface, text-ink, etc.).
       colors: {
         void: "var(--void)",
@@ -16,6 +16,15 @@ module.exports = {
           DEFAULT: "var(--accent)",
           soft: "var(--accent-soft)",
           glow: "var(--accent-glow)",
+          line: "var(--accent-line)",
+          ink: "var(--accent-ink)",
+        },
+        positive: "var(--positive)",
+        danger: "var(--danger)",
+        fill: {
+          DEFAULT: "var(--fill)",
+          2: "var(--fill-2)",
+          3: "var(--fill-3)",
         },
         ink: {
           DEFAULT: "var(--text)",
@@ -25,6 +34,7 @@ module.exports = {
         edge: {
           DEFAULT: "var(--border)",
           dim: "var(--border-dim)",
+          strong: "var(--border-strong)",
         },
       },
       fontFamily: {

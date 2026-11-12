@@ -34,44 +34,39 @@ export function youtubeId(raw: string): string | null {
 export function blockData(element: ExcalidrawElement): BlockData | undefined {
   return parseBlockData(element.customData?.cadanrawBlock);
 }
-export function insertBlock(
-  api: ExcalidrawImperativeAPI,
+/** Default card size for each kind of block, in scene units. */
+export function blockSize(kind: BlockKind): { width: number; height: number } {
+  return {
+    width:
+      kind === "kanban"
+        ? 840
+        : kind === "calendar"
+          ? 560
+          : kind === "table"
+            ? 540
+            : kind === "checklist"
+              ? 480
+              : 360,
+    height:
+      kind === "kanban"
+        ? 420
+        : kind === "calendar"
+          ? 480
+          : kind === "board"
+            ? 300
+            : kind === "link" || kind === "file"
+              ? 280
+              : 250,
+  };
+}
+
+/** A fresh block's content, with anything in `initial` laid over the defaults. */
+export function newBlockData(
   kind: BlockKind,
   url = "",
   initial: Partial<BlockData> = {},
-  place: Placement = {},
-): string {
-  const state = api.getAppState();
-  const width =
-    place.width ??
-    (kind === "kanban"
-      ? 840
-      : kind === "calendar"
-        ? 560
-        : kind === "table"
-          ? 540
-          : kind === "checklist"
-            ? 480
-            : 360);
-  const height =
-    place.height ??
-    (kind === "kanban"
-      ? 420
-      : kind === "calendar"
-        ? 480
-        : kind === "board"
-          ? 300
-          : kind === "link" || kind === "file"
-            ? 280
-            : 250);
-  const center = viewportCoordsToSceneCoords(
-    {
-      clientX: state.offsetLeft + state.width / 2,
-      clientY: state.offsetTop + state.height / 2,
-    },
-    state,
-  );
-  const data = parseBlockData({
+): BlockData {
+  return parseBlockData({
     createdAt: Date.now(),
     columns: ["To do", "In progress", "Done"].map((title) => ({
       id: crypto.randomUUID(),
@@ -103,7 +98,55 @@ export function insertBlock(
     ...initial,
     kind,
   })!;
-  // A native embeddable remains movable, resizable, undoable and serializable.
+}
+
+/**
+ * Build a block element without an editor. A native embeddable remains
+ * movable, resizable, undoable and serializable.
+ */
+export function createBlockElement(
+  data: BlockData,
+  box: { x: number; y: number; width: number; height: number },
+): ExcalidrawEmbeddableElement {
+  const base = convertToExcalidrawElements([
+    {
+      type: "rectangle",
+      ...box,
+      roughness: 0,
+      strokeColor: "transparent",
+      backgroundColor: "transparent",
+      strokeWidth: 0,
+      roundness: { type: 3, value: 22 },
+    },
+  ])[0];
+  return {
+    ...base,
+    type: "embeddable",
+    link: "https://cadanraw.local/block",
+    backgroundColor: "transparent",
+    customData: { cadanrawBlock: data },
+  } as ExcalidrawEmbeddableElement;
+}
+
+export function insertBlock(
+  api: ExcalidrawImperativeAPI,
+  kind: BlockKind,
+  url = "",
+  initial: Partial<BlockData> = {},
+  place: Placement = {},
+): string {
+  const state = api.getAppState();
+  const size = blockSize(kind);
+  const width = place.width ?? size.width;
+  const height = place.height ?? size.height;
+  const center = viewportCoordsToSceneCoords(
+    {
+      clientX: state.offsetLeft + state.width / 2,
+      clientY: state.offsetTop + state.height / 2,
+    },
+    state,
+  );
+  const data = newBlockData(kind, url, initial);
   let x = place.x ?? center.x - width / 2;
   const y = place.y ?? center.y - height / 2;
   const existing = api.getSceneElements();
@@ -122,27 +165,7 @@ export function insertBlock(
     attempt++
   )
     x += width + 32;
-  const base = convertToExcalidrawElements([
-    {
-      type: "rectangle",
-      x,
-      y,
-      width,
-      height,
-      roughness: 0,
-      strokeColor: "transparent",
-      backgroundColor: "transparent",
-      strokeWidth: 0,
-      roundness: { type: 3, value: 22 },
-    },
-  ])[0];
-  const element = {
-    ...base,
-    type: "embeddable",
-    link: "https://cadanraw.local/block",
-    backgroundColor: "transparent",
-    customData: { cadanrawBlock: data },
-  } as ExcalidrawEmbeddableElement;
+  const element = createBlockElement(data, { x, y, width, height });
   api.setActiveTool({ type: "selection" });
   api.updateScene({
     elements: [...api.getSceneElementsIncludingDeleted(), element],
@@ -167,6 +190,20 @@ export function insertBlock(
       animate: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
     });
   return element.id;
+}
+/** Insert a block centred on a screen point (the "/" menu drops it under the cursor). */
+export function insertBlockAtPoint(
+  api: ExcalidrawImperativeAPI,
+  kind: BlockKind,
+  point: { clientX: number; clientY: number },
+  url = "",
+): string {
+  const { width, height } = blockSize(kind);
+  const scene = viewportCoordsToSceneCoords(point, api.getAppState());
+  return insertBlock(api, kind, url, {}, {
+    x: scene.x - width / 2,
+    y: scene.y - height / 2,
+  });
 }
 export function updateBlock(
   api: ExcalidrawImperativeAPI,

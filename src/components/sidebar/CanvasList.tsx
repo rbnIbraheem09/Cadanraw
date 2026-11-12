@@ -1,75 +1,100 @@
 import { useEffect, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { motion } from "framer-motion";
 import {
-  ChevronDown,
   ChevronRight,
   Folder,
+  FolderPlus,
   Home,
-  Pin,
   Inbox,
   MoreHorizontal,
+  PenLine,
+  Pin,
+  Trash2,
 } from "lucide-react";
 import CanvasListItem from "./CanvasListItem";
 import ContextMenu from "../ui/ContextMenu";
 import { useStore } from "../../store/excaliStore";
 import { folderTrail } from "../../lib/folders";
+import { goHome } from "../../lib/board-actions";
+import { spring } from "../../lib/motion";
 import type { FolderMeta } from "../../types/canvas";
+
+const BOARD_MIME = "application/x-cadanraw-board";
+
+/** The selection highlight glides between rows instead of jumping. */
+const Pill = () => (
+  <motion.span layoutId="sidebar-pill" className="nav-pill" transition={spring} />
+);
+
 export default function CanvasList() {
-  const s = useStore();
+  const s = useStore(
+    useShallow((s) => ({
+      canvases: s.canvases,
+      folders: s.folders,
+      homeOpen: s.homeOpen,
+      libraryScope: s.libraryScope,
+      currentFolderId: s.currentFolderId,
+      moveCanvas: s.moveCanvas,
+      createFolder: s.createFolder,
+      renameFolder: s.renameFolder,
+      removeFolder: s.removeFolder,
+    })),
+  );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [menu, setMenu] = useState<{
-    folder: FolderMeta;
-    x: number;
-    y: number;
-  } | null>(null);
+  const [menu, setMenu] = useState<{ folder: FolderMeta; x: number; y: number } | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
+
   useEffect(() => {
     setExpanded(
       (previous) =>
-        new Set([
-          ...previous,
-          ...folderTrail(s.folders, s.currentFolderId).map((f) => f.id),
-        ]),
+        new Set([...previous, ...folderTrail(s.folders, s.currentFolderId).map((f) => f.id)]),
     );
   }, [s.currentFolderId, s.folders]);
-  const query = s.searchQuery.trim().toLowerCase();
+
+  const scope = s.homeOpen ? s.libraryScope : null;
   const visible = s.canvases.filter((b) =>
-    query
-      ? b.name.toLowerCase().includes(query)
-      : s.libraryScope === "pinned"
-        ? b.isPinned
-        : s.libraryScope === "folder"
-          ? b.folderId === s.currentFolderId
-          : true,
+    s.libraryScope === "pinned"
+      ? b.isPinned
+      : s.libraryScope === "folder"
+        ? b.folderId === s.currentFolderId
+        : true,
   );
+
   const drop = (e: React.DragEvent, folderId: string | null) => {
     e.preventDefault();
     e.currentTarget.classList.remove("drop-active");
-    const id = e.dataTransfer.getData("application/x-cadanraw-board");
+    const id = e.dataTransfer.getData(BOARD_MIME);
     if (id) void s.moveCanvas(id, folderId);
   };
   const over = (e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes("application/x-cadanraw-board")) {
+    if (e.dataTransfer.types.includes(BOARD_MIME)) {
       e.preventDefault();
       e.currentTarget.classList.add("drop-active");
     }
   };
+  const leave = (e: React.DragEvent) => e.currentTarget.classList.remove("drop-active");
+
   const renderFolder = (folder: FolderMeta, depth = 0) => {
     const children = s.folders.filter((f) => f.parentId === folder.id);
     const isOpen = expanded.has(folder.id);
+    const active = scope === "folder" && s.currentFolderId === folder.id;
     return (
       <div key={folder.id}>
         <div
-          className={`sidebar-folder ${s.libraryScope === "folder" && s.currentFolderId === folder.id ? "is-active" : ""}`}
-          style={{ paddingLeft: 8 + depth * 12 }}
+          className={`sidebar-folder ${active ? "is-active" : ""}`}
+          style={{ paddingLeft: 6 + depth * 12 }}
           onDragOver={over}
-          onDragLeave={(e) => e.currentTarget.classList.remove("drop-active")}
+          onDragLeave={leave}
           onDrop={(e) => drop(e, folder.id)}
           onContextMenu={(e) => {
             e.preventDefault();
             setMenu({ folder, x: e.clientX, y: e.clientY });
           }}
         >
+          {active && <Pill />}
           <button
             className="folder-expand"
             disabled={!children.length}
@@ -83,19 +108,11 @@ export default function CanvasList() {
               })
             }
           >
-            {children.length ? (
-              isOpen ? (
-                <ChevronDown size={12} />
-              ) : (
-                <ChevronRight size={12} />
-              )
-            ) : (
-              <span />
-            )}
+            <ChevronRight size={12} className={isOpen ? "is-open" : ""} />
           </button>
           <button
             className="sidebar-folder-name"
-            onClick={() => void s.goHome(folder.id, "folder")}
+            onClick={() => void goHome(folder.id, "folder")}
           >
             <Folder size={14} />
             {editing === folder.id ? (
@@ -103,12 +120,14 @@ export default function CanvasList() {
                 autoFocus
                 aria-label="Folder name"
                 value={name}
+                maxLength={200}
+                onFocus={(e) => e.target.select()}
                 onClick={(e) => e.stopPropagation()}
                 onChange={(e) => setName(e.target.value)}
                 onKeyDown={(e) => {
                   e.stopPropagation();
                   if (e.key === "Enter") {
-                    void s.renameFolder(folder.id, name);
+                    if (name.trim()) void s.renameFolder(folder.id, name.trim());
                     setEditing(null);
                   }
                   if (e.key === "Escape") setEditing(null);
@@ -118,9 +137,7 @@ export default function CanvasList() {
             ) : (
               <span>{folder.name}</span>
             )}
-            <small>
-              {s.canvases.filter((b) => b.folderId === folder.id).length}
-            </small>
+            <small>{s.canvases.filter((b) => b.folderId === folder.id).length || ""}</small>
           </button>
           <button
             className="sidebar-folder-more"
@@ -134,69 +151,107 @@ export default function CanvasList() {
       </div>
     );
   };
+
   return (
     <>
-      <nav className="sidebar-library-nav" aria-label="Workspace">
+      <nav className="sidebar-nav" aria-label="Library">
         <button
-          className={s.homeOpen && s.libraryScope === "all" ? "is-active" : ""}
-          onClick={() => void s.goHome()}
+          className={scope === "all" ? "is-active" : ""}
+          onClick={() => void goHome()}
         >
+          {scope === "all" && <Pill />}
           <Home size={15} />
-          Home<span>{s.canvases.length}</span>
+          <span>Home</span>
+          <small>{s.canvases.length || ""}</small>
         </button>
         <button
-          className={s.libraryScope === "pinned" ? "is-active" : ""}
-          onClick={() => void s.goHome(null, "pinned")}
+          className={scope === "pinned" ? "is-active" : ""}
+          onClick={() => void goHome(null, "pinned")}
         >
-          <Pin size={14} />
-          Pinned<span>{s.canvases.filter((b) => b.isPinned).length || ""}</span>
+          {scope === "pinned" && <Pill />}
+          <Pin size={15} />
+          <span>Pinned</span>
+          <small>{s.canvases.filter((b) => b.isPinned).length || ""}</small>
         </button>
         <button
-          className={
-            s.libraryScope === "folder" && !s.currentFolderId ? "is-active" : ""
-          }
-          onClick={() => void s.goHome(null, "folder")}
+          className={scope === "folder" && !s.currentFolderId ? "is-active" : ""}
+          onClick={() => void goHome(null, "folder")}
           onDragOver={over}
-          onDragLeave={(e) => e.currentTarget.classList.remove("drop-active")}
+          onDragLeave={leave}
           onDrop={(e) => drop(e, null)}
         >
+          {scope === "folder" && !s.currentFolderId && <Pill />}
           <Inbox size={15} />
-          Unfiled<span>{s.canvases.filter((b) => !b.folderId).length}</span>
+          <span>Unfiled</span>
+          <small>{s.canvases.filter((b) => !b.folderId).length || ""}</small>
         </button>
       </nav>
+
       <div className="sidebar-section-label">
-        <span>FOLDERS</span>
-        <button onClick={() => void s.goHome()}>Manage</button>
+        <span>Folders</span>
+        <button
+          aria-label="New folder"
+          title="New folder"
+          onClick={() => {
+            setCreating(true);
+            setName("");
+          }}
+        >
+          <FolderPlus size={13} />
+        </button>
       </div>
       <div className="sidebar-folder-tree">
+        {creating && (
+          <form
+            className="sidebar-folder is-creating"
+            style={{ paddingLeft: 6 }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (name.trim()) void s.createFolder(name.trim(), null);
+              setCreating(false);
+            }}
+          >
+            <span className="folder-expand" />
+            <span className="sidebar-folder-name">
+              <Folder size={14} />
+              <input
+                autoFocus
+                aria-label="New folder name"
+                placeholder="Folder name"
+                value={name}
+                maxLength={200}
+                onChange={(e) => setName(e.target.value)}
+                onBlur={() => setCreating(false)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setCreating(false);
+                }}
+              />
+            </span>
+          </form>
+        )}
         {s.folders.filter((f) => !f.parentId).map((f) => renderFolder(f))}
-        {!s.folders.length && (
-          <p className="sidebar-folder-hint">
-            Keep each project in its own folder.
-          </p>
+        {!s.folders.length && !creating && (
+          <p className="sidebar-hint">Drag boards onto a folder to file them.</p>
         )}
       </div>
+
       <div className="sidebar-section-label">
         <span>
-          {query
-            ? "SEARCH RESULTS"
+          {s.libraryScope === "pinned"
+            ? "Pinned"
             : s.libraryScope === "folder"
-              ? s.folders.find((f) => f.id === s.currentFolderId)?.name ||
-                "UNFILED"
-              : "BOARDS"}
+              ? s.folders.find((f) => f.id === s.currentFolderId)?.name || "Unfiled"
+              : "Boards"}
         </span>
         <small>{visible.length}</small>
       </div>
-      <div className="flex flex-col gap-0.5 px-1.5 pb-2">
+      <div className="sidebar-boards">
         {visible.map((board) => (
           <CanvasListItem key={board.id} canvas={board} />
         ))}
-        {!visible.length && (
-          <p className="sidebar-folder-hint">
-            {query ? "No matching boards." : "No boards here yet."}
-          </p>
-        )}
+        {!visible.length && <p className="sidebar-hint">No boards here yet.</p>}
       </div>
+
       {menu && (
         <ContextMenu
           x={menu.x}
@@ -205,10 +260,12 @@ export default function CanvasList() {
           items={[
             {
               label: "Open folder",
-              onClick: () => void s.goHome(menu.folder.id, "folder"),
+              icon: <Folder size={14} />,
+              onClick: () => void goHome(menu.folder.id, "folder"),
             },
             {
-              label: "Rename folder",
+              label: "Rename",
+              icon: <PenLine size={14} />,
               onClick: () => {
                 setEditing(menu.folder.id);
                 setName(menu.folder.name);
@@ -218,6 +275,7 @@ export default function CanvasList() {
               label: "Remove folder · keep boards",
               danger: true,
               separator: true,
+              icon: <Trash2 size={14} />,
               onClick: () => void s.removeFolder(menu.folder.id),
             },
           ]}

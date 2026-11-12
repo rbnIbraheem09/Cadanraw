@@ -1,0 +1,181 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--deep);
+    color: var(--text);
+    font-family: theme("fontFamily.sans");
+    font-size: 14px;
+    /* A hair of negative tracking + kerning makes Hanken feel tighter and crafted at UI sizes. */
+    letter-spacing: -0.006em;
+    font-feature-settings: "kern", "liga", "calt";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* The whole shell is a fixed desktop surface — never scroll the page itself. */
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* The desktop-style global user-select:none must NOT disable text editing —
+     Excalidraw edits labels via a textarea, and our dialogs use inputs. */
+  input,
+  textarea,
+  [contenteditable="true"] {
+    user-select: text;
+  }
+
+  /* Quiet scrollbars for the shell (Excalidraw manages its own canvas). */
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--fill-2);
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--fill-3);
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* Keyboard focus is one neutral ring everywhere; text fields show a caret only. */
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+  input:focus-visible,
+  textarea:focus-visible {
+    outline: none;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--accent) 32%, transparent);
+  }
+
+  kbd {
+    font-family: inherit;
+  }
+}
+
+@layer utilities {
+  /* Electron frameless drag helpers. */
+  .drag-region {
+    -webkit-app-region: drag;
+  }
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+}
+
+/* ─── Motion ────────────────────────────────────────────────────────────────
+   Transform, opacity and filter only, so the compositor does the work.
+   Nothing loops while idle. */
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+    filter: blur(8px);
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+    filter: blur(4px);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes tick-pop {
+  from {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+}
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* A view arriving: home, settings, a folder. */
+.view-enter {
+  animation: rise-in 440ms var(--ease-out) both;
+}
+/* Grid children arrive one after another; --i is their index. */
+.stagger {
+  animation: rise-in 460ms var(--ease-out) both;
+  animation-delay: calc(min(var(--i, 0), 14) * 26ms);
+}
+.pop-enter {
+  animation: pop-in 300ms var(--ease-spring) both;
+}
+
+/* Discrete controls sink a little on press and spring back. */
+.press {
+  transition:
+    transform 420ms var(--ease-spring),
+    background-color var(--dur-fast) ease,
+    color var(--dur-fast) ease,
+    border-color var(--dur-fast) ease,
+    opacity var(--dur-fast) ease;
+}
+.press:active {
+  transform: scale(0.96);
+  transition-duration: 80ms;
+}
+
+/* Reduced motion: honour the system unless the user chose otherwise. */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) *,
+  :root:not([data-motion="full"]) *::before,
+  :root:not([data-motion="full"]) *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+:root[data-motion="reduced"] *,
+:root[data-motion="reduced"] *::before,
+:root[data-motion="reduced"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-delay: 0ms !important;
+  transition-duration: 0.01ms !important;
+}
+
+/* Board ⇄ library: the preview card grows into the canvas. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 260ms;
+  animation-timing-function: var(--ease-soft);
+}
+::view-transition-group(board-stage) {
+  animation-duration: 420ms;
+  animation-timing-function: var(--ease-out);
+}
+::view-transition-old(board-stage),
+::view-transition-new(board-stage) {
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+  animation-duration: 300ms;
+}

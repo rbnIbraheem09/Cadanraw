@@ -13,7 +13,7 @@ export default function PreviewBanner() {
   if (!versionId) return null;
 
   return (
-    <div className="flex shrink-0 items-center justify-between gap-3 border-b border-accent/30 bg-accent-soft px-4 py-2 text-[12.5px]">
+    <div className="flex shrink-0 items-center justify-between gap-3 border-b border-accent-line bg-accent-soft px-4 py-2 text-[12.5px]">
       <span className="min-w-0 truncate text-ink">
         <span className="font-medium text-accent">Previewing</span>{" "}
         {version?.description ?? "Auto-save"}
